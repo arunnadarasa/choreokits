@@ -81,17 +81,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Mint choreography kits on Midnight with a private ZK author commitment. Public catalog, confidential authorship.",
+          "Sell bundled choreography sequences as tokenized, licensable assets on Midnight. Author identity stays private, provenance stays verifiable.",
       },
       { name: "author", content: "StreetKode Fam · Indian Krump Festival 14" },
-      { property: "og:title", content: "Tokenized Choreo Kits" },
+      { property: "og:title", content: "Tokenized Choreo Kits — ZK licensing for choreography" },
       {
         property: "og:description",
         content:
-          "Midnight ZK single-page demo — tokenized, licensable choreography kits with private authorship.",
+          "Sell bundled choreography sequences as tokenized, licensable assets on Midnight. Author identity stays private, provenance stays verifiable.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Tokenized Choreo Kits — ZK licensing for choreography" },
+      { name: "twitter:description", content: "Sell bundled choreography sequences as tokenized, licensable assets on Midnight. Author identity stays private, provenance stays verifiable." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5227e9b6-c4ee-46dc-a414-66f46e83274f" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5227e9b6-c4ee-46dc-a414-66f46e83274f" },
     ],
     links: [
       {

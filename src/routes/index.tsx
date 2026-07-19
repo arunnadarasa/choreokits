@@ -22,7 +22,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "A Midnight ZK single-page demo: mint choreography kits with private authorship and public provenance.",
+          "Sell bundled choreography sequences as tokenized, licensable assets on Midnight. Author identity stays private, provenance stays verifiable.",
       },
       { property: "og:type", content: "website" },
     ],

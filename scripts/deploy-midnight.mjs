@@ -172,7 +172,7 @@ async function main() {
   const providers = {
     privateStateProvider: levelPrivateStateProvider({
       privateStateStoreName: `choreo-kits-deploy-${Date.now()}`,
-      privateStoragePasswordProvider: () => "choreo-kits-local-password",
+      privateStoragePasswordProvider: () => "Choreo-Kits-Local-2026!",
       accountId,
     }),
     publicDataProvider: indexerPublicDataProvider(INDEXER_URL, INDEXER_WS_URL),

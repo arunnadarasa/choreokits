@@ -248,14 +248,16 @@ async function main() {
       break;
     } catch (e) {
       const msg = String(e?.message ?? e);
-      if (msg.includes("Insufficient Funds") && attempt < maxAttempts) {
-        logger.warn(`Dust not yet synced (attempt ${attempt}/${maxAttempts}); retrying in 10s...`);
+      const retryable = /Insufficient Funds|Custom error: 171|Invalid Transaction|Transaction submission error/i.test(msg);
+      if (retryable && attempt < maxAttempts) {
+        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); retrying in 10s...`);
         await setTimeout(10_000);
         continue;
       }
       throw e;
     }
   }
+
 
 
 

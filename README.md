@@ -120,6 +120,13 @@ pins known-good tags matching Compact 0.23 / MidnightJS 4.1.x:
 
 If the node tag ever 404s, swap it for `latest-main` (rolling dev tag).
 
+### Troubleshooting
+
+- **`midnight-node` restarts / `db_sync_postgres_connection_string must be defined`** — `2.0.0-rc.4` is a Partner Chain build. `docker-compose.yml` already sets `USE_MAIN_CHAIN_FOLLOWER_MOCK=true` and `APP__MAIN_CHAIN_FOLLOWER_MOCK__ENABLED=true` to keep the standalone chain self-contained (no Cardano, no Postgres). If you edited compose and lost those, add them back.
+- **`indexer did not become ready within 120000ms`** — the deploy script now inspects `midnight-node` and fails fast if it's `restarting` or `exited`. Run `docker compose logs --tail=80 node` to see the crash reason, fix compose, then `docker compose down -v && bun run compile`.
+- **Stale chain state after a compose change** — always `docker compose down -v` (wipes the volume) before re-running `bun run compile`.
+
+
 
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.
 The genesis wallet is pre-funded with unlimited tDUST — no faucet.

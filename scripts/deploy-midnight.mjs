@@ -108,6 +108,65 @@ async function waitForService(url, name, timeoutMs = 120_000, containerName) {
   throw new Error(`${name} at ${url} did not become ready within ${timeoutMs}ms`);
 }
 
+async function waitForBlockHeight(indexerUrl, minHeight, timeoutMs = 60_000) {
+  const start = Date.now();
+  logger.info(`Waiting for node to produce block height >= ${minHeight}...`);
+  let lastHeight = -1;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const resp = await fetch(indexerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "{ block { height } }" }),
+      });
+      const json = await resp.json();
+      const h = Number(json?.data?.block?.height ?? -1);
+      if (h !== lastHeight) {
+        logger.info(`  current tip height: ${h}`);
+        lastHeight = h;
+      }
+      if (h >= minHeight) {
+        logger.info(`Node is producing blocks (height ${h}).`);
+        return;
+      }
+    } catch {
+      // indexer not fully warm yet
+    }
+    await setTimeout(2_000);
+  }
+  throw new Error(`Node did not reach block height ${minHeight} within ${timeoutMs}ms`);
+}
+
+async function waitForWalletReady(wallet, timeoutMs = 90_000) {
+  const start = Date.now();
+  logger.info("Waiting for wallet to reach tip and see dust balance...");
+  let lastLog = "";
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const state = await firstValueFrom(wallet.state());
+      const synced = state?.syncProgress?.synced === true;
+      const balances = state?.balances ?? {};
+      const hasDust = Object.values(balances).some((v) => {
+        try { return BigInt(v) > 0n; } catch { return false; }
+      });
+      const line = `  synced=${synced} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
+      if (line !== lastLog) {
+        logger.info(line);
+        lastLog = line;
+      }
+      if (synced && hasDust) {
+        logger.info("Wallet is ready.");
+        return;
+      }
+    } catch (e) {
+      // state stream may not be primed yet
+    }
+    await setTimeout(2_000);
+  }
+  logger.warn(`Wallet did not fully sync within ${timeoutMs}ms; proceeding anyway (retry loop will catch TTL failures).`);
+}
+
+
 
 async function main() {
   if (NETWORK_ID !== "undeployed") {

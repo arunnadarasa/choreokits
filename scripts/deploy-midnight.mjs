@@ -158,6 +158,12 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
+  // Give the wallet a moment to catch up with genesis blocks so its dust UTXO
+  // is visible before we try to balance the deploy tx.
+  logger.info("Waiting for genesis dust to sync (up to 60s)...");
+  await setTimeout(15_000);
+
+
   const coinPublicKey = zswapSecretKeys.coinPublicKey;
   const accountId = coinPublicKey;
 

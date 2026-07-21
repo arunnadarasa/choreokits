@@ -26,7 +26,7 @@ export function DeployPanel({
   const saveManual = useCallback(() => {
     setError(null);
     const trimmed = manual.trim();
-    if (!/^0x?[0-9a-fA-F]{6,}$/.test(trimmed)) {
+    if (!/^(0x)?[0-9a-fA-F]{6,}$/.test(trimmed)) {
       setError("Enter the hex contract address printed by scripts/deploy-midnight.mjs.");
       return;
     }

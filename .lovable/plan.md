@@ -1,21 +1,23 @@
 ## Root cause
 
-The private state provider rejects the local password `choreo-kits-local-password` — it only has lowercase + `-`, which counts as 2 character classes. `validatePassword` requires **3 of**: uppercase, lowercase, digits, specials.
+The validation regex in `src/components/DeployPanel.tsx` is wrong:
+
+```ts
+/^0x?[0-9a-fA-F]{6,}$/
+```
+
+This matches a literal `0` then an optional `x` — so it only accepts addresses that start with `0`. The deployed address `d9e68ddb...` starts with `d`, so the regex rejects it and shows "Enter the hex contract address printed by scripts/deploy-midnight.mjs."
 
 ## Fix
 
-Single line change in `scripts/deploy-midnight.mjs`:
+Group the optional `0x` prefix correctly in `src/components/DeployPanel.tsx`:
 
-```js
-privateStoragePasswordProvider: () => "Choreo-Kits-Local-2026!",
+```ts
+if (!/^(0x)?[0-9a-fA-F]{6,}$/.test(trimmed)) { ... }
 ```
 
-(uppercase + lowercase + digits + specials = 4 classes.)
+That's the only change.
 
 ## Verify
 
-```bash
-bun scripts/deploy-midnight.mjs
-```
-
-The Docker stack is already up; no need for `docker compose down -v`. Success = `Contract deployed at: 0200…` and `.env` gets `VITE_DEFAULT_CONTRACT` written.
+Reload the page, paste `d9e68ddb3068b7d2b6c1716080623735e2efecd41cb002932ba0f75e15c30552`, click **Use address** — the panel switches to "active" and the Publish form unlocks.

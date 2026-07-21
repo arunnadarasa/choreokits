@@ -10,7 +10,7 @@ import type {
   FinalizedTransaction,
   Transaction,
   TransactionId,
-  UnboundTransaction,
+  UnprovenTransaction,
 } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import type {
   MidnightProvider,

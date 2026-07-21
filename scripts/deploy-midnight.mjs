@@ -39,9 +39,11 @@ const logger = pino({
   transport: { target: "pino-pretty" },
 });
 
-// Local devnet genesis wallet #1 — pre-funded with tDUST on Undeployed.
+// Local devnet genesis-mint wallet — pre-funded with tDUST on the standalone
+// chain (see @midnight-ntwrk/testkit-js LocalTestEnvironment.genesisMintWalletSeed[0]).
 const ALICE_LOCAL_SEED =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+  "0000000000000000000000000000000000000000000000000000000000000002";
+
 
 const NETWORK_ID = process.env.VITE_NETWORK_ID ?? "undeployed";
 const NODE_WS = process.env.VITE_NODE_WS ?? "ws://localhost:9944";
@@ -156,6 +158,12 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
+  // Give the wallet a moment to catch up with genesis blocks so its dust UTXO
+  // is visible before we try to balance the deploy tx.
+  logger.info("Waiting for genesis dust to sync (up to 60s)...");
+  await setTimeout(15_000);
+
+
   const coinPublicKey = zswapSecretKeys.coinPublicKey;
   const accountId = coinPublicKey;
 
@@ -221,11 +229,27 @@ async function main() {
   );
 
   logger.info("Deploying TokenizedChoreoKits contract...");
-  const deployed = await deployContract(providers, {
-    compiledContract,
-    privateStateId: "choreo-kits-deployer",
-    initialPrivateState: { localSecretKey: deployerSecret },
-  });
+  let deployed;
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      deployed = await deployContract(providers, {
+        compiledContract,
+        privateStateId: `choreo-kits-deployer-${Date.now()}-${attempt}`,
+        initialPrivateState: { localSecretKey: deployerSecret },
+      });
+      break;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes("Insufficient Funds") && attempt < maxAttempts) {
+        logger.warn(`Dust not yet synced (attempt ${attempt}/${maxAttempts}); retrying in 10s...`);
+        await setTimeout(10_000);
+        continue;
+      }
+      throw e;
+    }
+  }
+
 
 
   const contractAddress = deployed.deployTxData.public.contractAddress;

@@ -101,12 +101,25 @@ bun run dev
 Docker cheat sheet:
 
 ```bash
-docker compose logs -f proof-server   # tail proof server (Ctrl+C to detach)
-docker compose logs -f node           # tail chain node
+docker compose pull                    # first run — pulls pinned image tags
+docker compose logs -f proof-server    # tail proof server (Ctrl+C to detach)
+docker compose logs -f node            # tail chain node
 docker compose down                    # stop everything (keeps chain data)
 docker compose down -v                 # stop + wipe the chain data volume
 # equivalent shortcuts: scripts/midnight-stack.sh {up|down|logs [svc]|ps|reset}
 ```
+
+### Image tags
+
+Upstream does **not** publish `midnightntwrk/midnight-node:latest`. `docker-compose.yml`
+pins known-good tags matching Compact 0.23 / MidnightJS 4.1.x:
+
+- `proof-server:4.0.0`
+- `midnight-node:2.0.0-rc.4`
+- `indexer-standalone:4.3.3`
+
+If the node tag ever 404s, swap it for `latest-main` (rolling dev tag).
+
 
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.
 The genesis wallet is pre-funded with unlimited tDUST — no faucet.

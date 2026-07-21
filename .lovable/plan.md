@@ -1,30 +1,44 @@
 **Goal**
-Restore the published app so `/` loads like preview, while keeping Midnight SDK/WASM strictly client-side.
+Fold this turn's production-deploy debugging into `.agents/skills/lovable-midnight/SKILL.md` so the next agent skips the multi-hour SSR/hydration loop we just walked through.
 
-**What I verified**
-- Published `/` currently returns the app’s root error UI, not the full demo page.
-- The most recent production worker requests are HTTP 200, which means the server is responding but TanStack is rendering its error boundary.
-- The older production crash was `Identifier '__tla' has already been declared`; current config already limits the top-level-await plugin to the client build.
-- The home route is `ssr: false`, but it still has a top-level type import from `@midnight-ntwrk/dapp-connector-api` and lazy components may still pull Midnight modules through the route graph.
+**New material to add**
 
-**Plan**
-1. **Expose the current route error in production safely**
-   - Temporarily make the root error boundary show the actual error message/stack in the published page, so the next failure is visible immediately on mobile instead of only showing “This page didn’t load”.
-   - Keep the fallback simple and removable.
+1. **New "Publishing to Cloudflare Workers (TanStack Start)" section**, above the existing frontend section, capturing the hard-won rules:
+   - Keep `nitro` **enabled** (don't set `nitro: false`) — disabling it splits the SSR bundle into chunks the Worker can't resolve (`No such module "assets/react"`).
+   - Restrict `vite-plugin-top-level-await` to the **client environment only** via `applyToEnvironment(env => env.name === "client")`. Running it in the SSR bundle causes `Identifier '__tla' has already been declared` in the workerd build.
+   - Add a `midnightSsrStub()` Vite plugin (`enforce: "pre"`) that, when `options.ssr` is true:
+     - redirects every `@midnight-ntwrk/*` import to an empty stub module, AND
+     - resolves the id normally then swaps the absolute path of `src/lib/contract.ts` for `src/lib/contract.ssr-stub.ts` (aliases, relative imports, and `@/` all funnel through the same absolute path).
+   - Home route must be `ssr: false`, but that alone is **not enough** — the SSR bundler still crawls the module graph, so both stubs above are required or the build dies with `MISSING_EXPORT "ContractState"` / `createCircuitCallTxInterface`.
+   - Never keep a top-level runtime `import` from `@midnight-ntwrk/*` in a route file. Type-only imports are fine (erased), but even those are risky — prefer defining the ConnectedAPI shape locally or importing types from a client-only module.
 
-2. **Harden the route against SSR/package graph leakage**
-   - Change `src/routes/index.tsx` so Midnight wallet API types are type-only/local and do not require a top-level Midnight package import in the route module.
-   - Ensure only hydrated client/lazy components import Midnight SDK packages.
+2. **New failure-modes table rows** (extend the existing ranked table):
+   | Symptom | Cause | Fix |
+   | --- | --- | --- |
+   | Published `/` shows generic "This page didn't load", preview works | Client-hydration crash hidden by root ErrorBoundary | Temporarily render `error.message` + `error.stack` in the root `errorComponent` to see the real cause on mobile |
+   | Prod runtime: `Class extends value undefined is not a constructor or null` in `browser-level-*.js` | `levelPrivateStateProvider` → `browser-level` → `abstract-level` CJS/ESM interop breaks in Rollup production bundle | Do NOT ship `levelPrivateStateProvider` to the browser. Write a tiny `localStorage`-backed `PrivateStateProvider<string, unknown>` (encode `Uint8Array` as `{__type:"Uint8Array",data:[...]}`) — see reference implementation in `src/lib/contract.ts` |
+   | Build error `MISSING_EXPORT "X" is not exported by "src/lib/midnight-ssr-stub.ts"` | Real client module (e.g. `src/lib/contract.ts`) was pulled into SSR bundle and hit the stub | Extend the SSR stub plugin to also swap the client module for a dedicated `.ssr-stub.ts` by absolute path |
+   | Prod SSR 500 `No such module "assets/react"` from `assets/server-*.js` | `nitro: false` produced multi-chunk SSR output workerd can't resolve | Re-enable `nitro`, keep the Midnight SSR stubs |
+   | Prod SSR crash `Identifier '__tla' has already been declared` | `vite-plugin-top-level-await` applied to the SSR bundle | Wrap the plugin with `applyToEnvironment(env => env.name === "client")` |
 
-3. **Fix the likely production runtime mismatch**
-   - If the visible error confirms a `browser-level` / `abstract-level` / IndexedDB/private-state provider issue, replace the current `levelPrivateStateProvider + BrowserLevel` production path with an in-browser private state provider backed by `localStorage` or IndexedDB-lite behavior, avoiding fragile CJS/Level interop in published builds.
-   - Keep the witness secret local to the browser only.
+3. **New "Private state provider" subsection** under the SDK guidance:
+   - Reference implementation: a `localStorage`-backed provider keyed by `choreo-kits:private-state:v1:<coinPubKey>:contracts:<addr>:states:<id>` with `Uint8Array` JSON encoding.
+   - Rationale: avoids the entire `level` dependency chain, which is the #1 source of production hydration crashes.
+   - Node deploy script can still use `levelPrivateStateProvider` (Node CJS interop is fine) — the ban is browser-only.
 
-4. **Keep Midnight stubbing clean for server builds**
-   - Keep the Vite SSR stubs for `@midnight-ntwrk/*` and `src/lib/contract.ts`.
-   - Avoid adding Nitro-disabling changes because the published worker needs the bundled server output.
+4. **New "Debugging a black/error published page on mobile" playbook**:
+   1. Temporarily render `error.message` + `error.stack` in the root TanStack `errorComponent`.
+   2. Also update `src/server.ts` to catch SSR throws and inline the stack into the fallback HTML.
+   3. `Publish → Update`, reload on device, read the real error.
+   4. Revert the verbose error UI once fixed.
 
-5. **Verify**
-   - Fetch the published URL after implementation to confirm it no longer renders the error page.
-   - Check production logs for any new stack trace.
-   - If publishing is needed, prompt you to hit **Publish / Update** so the live site receives the fix.
+5. **Update the retrospective** with:
+   - "Assume every Node-ecosystem storage lib (`level`, `classic-level`, `browser-level`) will break production Rollup. Pick pure-JS/`localStorage`/`IndexedDB` from day one."
+   - "Enable production build + published deploy early — preview passes hide Nitro/workerd/CJS interop bugs."
+
+**Skill file layout change**
+Everything lands in the existing `.agents/skills/lovable-midnight/SKILL.md` — no new reference files. The file stays under the ~50KB guidance.
+
+**Verify**
+- After edits: `code--view` the file to confirm section ordering and no duplicate headings.
+- Run `skills--apply_draft` on `.agents/skills/lovable-midnight` so the updates become active.

@@ -29,6 +29,15 @@ services:
     # If this tag ever gets yanked, fall back to `latest-main` (rolling dev tag).
     image: midnightntwrk/midnight-node:2.0.0-rc.4
     container_name: midnight-node
+    environment:
+      # 2.0.0-rc.4 is a Partner Chain build. Without this it tries to connect to
+      # a Cardano db-sync Postgres and crash-loops with:
+      #   "db_sync_postgres_connection_string must be defined if ariadne is enabled"
+      # Enabling the mock main-chain follower keeps the standalone --dev chain
+      # self-contained (no Cardano, no Postgres).
+      USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
+      APP__MAIN_CHAIN_FOLLOWER_MOCK__ENABLED: "true"
+      SHOW_SECRETS: "1"
     command:
       - "--dev"
       - "--rpc-external"
@@ -41,7 +50,10 @@ services:
       - "9933:9933"
     volumes:
       - midnight-node-data:/data
-    restart: unless-stopped
+    # Fail fast instead of hiding crashes in a restart loop — the deploy script
+    # inspects container state and surfaces the real error immediately.
+    restart: "no"
+
 
   indexer:
     image: midnightntwrk/indexer-standalone:4.3.3

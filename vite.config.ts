@@ -35,6 +35,9 @@ function midnightSsrStub(): Plugin {
 }
 
 export default defineConfig({
+  // MidnightJS is client-only (WASM, Buffer, top-level await). Disable the
+  // Cloudflare workerd SSR bundle so the build only produces the client app.
+  nitro: false,
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

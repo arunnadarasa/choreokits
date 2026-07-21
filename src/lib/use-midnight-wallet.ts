@@ -112,7 +112,8 @@ export function useMidnightWallet() {
       }
       if (!addr && typeof connectedApi.getUnshieldedAddress === "function") {
         try {
-          addr = await connectedApi.getUnshieldedAddress();
+          const u = await connectedApi.getUnshieldedAddress();
+          addr = typeof u === "string" ? u : (u as { unshieldedAddress?: string })?.unshieldedAddress ?? null;
         } catch {
           // ignore
         }

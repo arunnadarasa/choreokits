@@ -3,10 +3,18 @@ import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@/components/ClientOnly";
 
-const WalletConnectPanel = lazy(() => import("@/components/WalletConnectPanel"));
-const DeployPanel = lazy(() => import("@/components/DeployPanel"));
-const PublishKitForm = lazy(() => import("@/components/PublishKitForm"));
-const KitFeed = lazy(() => import("@/components/KitFeed"));
+const WalletConnectPanel = lazy(() =>
+  import("@/components/WalletConnectPanel").then((m) => ({ default: m.WalletConnectPanel })),
+);
+const DeployPanel = lazy(() =>
+  import("@/components/DeployPanel").then((m) => ({ default: m.DeployPanel })),
+);
+const PublishKitForm = lazy(() =>
+  import("@/components/PublishKitForm").then((m) => ({ default: m.PublishKitForm })),
+);
+const KitFeed = lazy(() =>
+  import("@/components/KitFeed").then((m) => ({ default: m.KitFeed })),
+);
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -105,7 +113,7 @@ function Demo() {
       <DeployPanel
         walletConnected={!!walletAddr}
         address={contractAddr}
-        onDeployed={(a) => {
+        onDeployed={(a: string) => {
           setContractAddr(a);
           setRefreshTick((t) => t + 1);
         }}

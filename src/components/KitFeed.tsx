@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { KitPayload } from "@/components/PublishKitForm";
+import { decodeChainState } from "@/lib/contract";
 
 type FeedEntry = KitPayload & { source: "local" | "chain" };
 
@@ -51,6 +52,16 @@ export function KitFeed({
       if (hex) {
         setChainState(hex);
         setIndexerErr(null);
+        const decoded = await decodeChainState(hex);
+        if (decoded.lastKit) {
+          setEntries((prev) => {
+            const exists = prev.some(
+              (e) => e.source === "chain" && e.publishedAt === decoded.lastKit!.publishedAt,
+            );
+            if (exists) return prev;
+            return [{ ...decoded.lastKit, source: "chain" }, ...prev];
+          });
+        }
       } else {
         setIndexerErr("Indexer reachable but no state yet — waiting for first tx.");
       }

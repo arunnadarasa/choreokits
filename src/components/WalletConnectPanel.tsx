@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { useMidnightWallet } from "@/lib/use-midnight-wallet";
 
 function truncate(a: string, h = 14, t = 10) {
@@ -8,16 +9,19 @@ function truncate(a: string, h = 14, t = 10) {
 export function WalletConnectPanel({
   expectedNetwork = "undeployed",
   onConnected,
+  onApiReady,
 }: {
   expectedNetwork?: string;
   onConnected?: (addr: string) => void;
+  onApiReady?: (api: ConnectedAPI) => void;
 }) {
   const w = useMidnightWallet();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (w.status === "connected" && w.address) onConnected?.(w.address);
-  }, [w.status, w.address, onConnected]);
+    if (w.status === "connected" && w.api) onApiReady?.(w.api);
+  }, [w.status, w.address, w.api, onConnected, onApiReady]);
 
   useEffect(() => {
     if (!copied) return;

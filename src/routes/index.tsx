@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
+import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@/components/ClientOnly";
-import { WalletConnectPanel } from "@/components/WalletConnectPanel";
-import { DeployPanel, CONTRACT_STORAGE_KEY } from "@/components/DeployPanel";
-import { PublishKitForm } from "@/components/PublishKitForm";
-import { KitFeed } from "@/components/KitFeed";
+
+const WalletConnectPanel = lazy(() => import("@/components/WalletConnectPanel"));
+const DeployPanel = lazy(() => import("@/components/DeployPanel"));
+const PublishKitForm = lazy(() => import("@/components/PublishKitForm"));
+const KitFeed = lazy(() => import("@/components/KitFeed"));
 
 export const Route = createFileRoute("/")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Tokenized Choreo Kits — ZK licensing for choreography" },
@@ -42,7 +45,15 @@ function Index() {
             </div>
           }
         >
-          <Demo />
+          <Suspense
+            fallback={
+              <div className="p-5 border border-border rounded-md text-sm text-muted-foreground">
+                Loading wallet & contract modules…
+              </div>
+            }
+          >
+            <Demo />
+          </Suspense>
         </ClientOnly>
         <Footer />
       </div>
@@ -73,12 +84,14 @@ function Header() {
 
 function Demo() {
   const [walletAddr, setWalletAddr] = useState<string | null>(null);
+  const [walletApi, setWalletApi] = useState<ConnectedAPI | null>(null);
   const [contractAddr, setContractAddr] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const envDefault = import.meta.env.VITE_DEFAULT_CONTRACT as string | undefined;
-    const saved = localStorage.getItem(CONTRACT_STORAGE_KEY) || envDefault || null;
+    const STORAGE_KEY = "choreo:contract-address";
+    const saved = localStorage.getItem(STORAGE_KEY) || envDefault || null;
     if (saved) setContractAddr(saved);
   }, []);
 
@@ -87,6 +100,7 @@ function Demo() {
       <WalletConnectPanel
         expectedNetwork={(import.meta.env.VITE_NETWORK_ID as string) || "undeployed"}
         onConnected={setWalletAddr}
+        onApiReady={setWalletApi}
       />
       <DeployPanel
         walletConnected={!!walletAddr}
@@ -98,6 +112,7 @@ function Demo() {
       />
       <PublishKitForm
         walletConnected={!!walletAddr}
+        walletApi={walletApi}
         contractAddress={contractAddr}
         onPublished={() => setRefreshTick((t) => t + 1)}
       />

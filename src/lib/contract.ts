@@ -45,17 +45,18 @@ let contractModuleCache: ContractModule | null = null;
 
 export async function loadContractModule(): Promise<ContractModule | null> {
   if (contractModuleCache) return contractModuleCache;
-  const candidates = ["/contract/index.js"];
-  for (const src of candidates) {
-    try {
-      const mod = (await import(/* @vite-ignore */ src)) as ContractModule;
-      contractModuleCache = mod;
-      return mod;
-    } catch {
-      // try next
-    }
+  if (typeof window === "undefined") return null;
+  try {
+    const url = new URL("/contract/index.js", window.location.origin).href;
+    // Hide the import from Vite's static analyzer — the file lives in /public
+    // and cannot be resolved by the bundler.
+    const dynamicImport = new Function("u", "return import(u)") as (u: string) => Promise<ContractModule>;
+    const mod = await dynamicImport(url);
+    contractModuleCache = mod;
+    return mod;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 class FetchZKConfigProvider implements ZKConfigProvider<string> {

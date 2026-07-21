@@ -47,10 +47,11 @@ export async function loadContractModule(): Promise<ContractModule | null> {
   if (contractModuleCache) return contractModuleCache;
   if (typeof window === "undefined") return null;
   try {
-    // Path is resolved at dev/build time by Vite (CJS→ESM via commonjsOptions).
-    // Wrapped in a variable + @vite-ignore so typecheck doesn't require the file to exist
-    // in every environment (it's produced by `bun run midnight:compile`).
-    const p = "../../contracts/managed/tokenized-choreo-kits/contract/index.cjs";
+    // Path is loaded directly by the browser in Vite dev. It is produced by
+    // `compact compile` under contracts/managed, not copied to public/contract.
+    // Keep it hidden from Vite's static resolver so fresh clones still start
+    // before the user runs `bun run compile`.
+    const p = "../../contracts/managed/tokenized-choreo-kits/contract/index.js";
     const mod: any = await import(/* @vite-ignore */ p);
     contractModuleCache = (mod.default ?? mod) as ContractModule;
     return contractModuleCache;
@@ -303,7 +304,7 @@ export async function publishKit(
   const contractMod = await loadContractModule();
   if (!contractMod) {
     throw new Error(
-      'Compiled contract not found in public/contract. Run "bun run midnight:compile" first.',
+      'Compiled contract not found at contracts/managed/tokenized-choreo-kits. Run "bun run midnight:compile" first.',
     );
   }
 

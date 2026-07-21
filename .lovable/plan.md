@@ -1,25 +1,40 @@
-## Problem
+## Root cause
 
-Wallet has 0 dust. The standalone chain's genesis-funded seed (per testkit's `LocalTestEnvironment`) is:
+`@midnight-ntwrk/midnight-js-contracts` calls `providers.walletProvider.balanceTx(provenTx)` with **one argument**. Our `balanceTx`/`midnightProvider` in `scripts/deploy-midnight.mjs` was written as `(tx, ttl) => ...` and forwarded that `undefined` `ttl` to `wallet.balanceUnboundTransaction(tx, keys, { ttl })`. The dust wallet then does `Intent.new(ttl)` → `.getTime()` on `undefined` → the exact crash:
 
 ```
-0000000000000000000000000000000000000000000000000000000000000002
+undefined is not an object (evaluating 'arg0.getTime')
+  at .../wallet-sdk-dust-wallet/dist/v1/Transacting.js:285
 ```
 
-Our deploy script uses `...0001`, which has no balance — hence `Insufficient Funds: could not balance dust`.
+So the wallet + genesis dust are actually fine — we just never gave the balancing call a valid TTL.
 
-## Fix
+## Fix (single file: `scripts/deploy-midnight.mjs`)
 
-In `scripts/deploy-midnight.mjs` line 44, change the seed constant from `...0001` to `...0002`.
-
-Also add a `waitForDust` step after `Starting wallet sync...` that polls `wallet.state()` until the dust balance is > 0 (with a 60s timeout) so the deploy waits for the wallet to actually see the genesis UTXO before submitting the tx, and fails with a clear "no dust on seed X — is the node freshly reset?" message otherwise.
+1. Import `ttlOneHour` from `@midnight-ntwrk/midnight-js-utils`.
+2. In both `walletProvider.balanceTx` and `midnightProvider.balanceTx`, ignore any caller-provided `ttl` and compute one locally:
+   ```js
+   balanceTx: async (tx) => {
+     const ttl = ttlOneHour();
+     const recipe = await wallet.balanceUnboundTransaction(
+       tx,
+       { shieldedSecretKeys: zswapSecretKeys, dustSecretKey },
+       { ttl },
+     );
+     return wallet.finalizeRecipe(recipe);
+   },
+   ```
+3. Leave everything else (genesis seed `...0002`, 15s sync wait, insufficient-funds retry loop, ZK config path, witnesses) unchanged — those were fine.
 
 ## Verify
 
+Re-run:
+
 ```bash
-docker compose down -v && bun run compile
+docker compose down -v
+bun run compile
 ```
 
-Expect the wallet to sync, show a dust balance, then `Contract deployed at: 0200…`.
+Success = script logs `Contract deployed at: 0200…` and writes `VITE_DEFAULT_CONTRACT=` into `.env`, then `bun run dev` boots the UI.
 
-No README changes.
+If a new error appears, capture the full stack — but the `getTime` crash will be gone.

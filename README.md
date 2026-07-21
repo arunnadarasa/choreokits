@@ -43,13 +43,18 @@ Public ledger: `kit_count`, `last_kit` (JSON blob), `last_author_commitment`.
 Private witness: `localSecretKey()` → per-user 32-byte value in `localStorage`.
 Circuit: `publishKit(payload)` writes the commitment + payload and bumps the counter.
 
-## One-time local setup
+## One-time local setup (Docker Desktop)
+
+Prerequisite: **Docker Desktop** running (`docker info` succeeds).
 
 ```bash
-# 1. Compact compiler
+# 1. Compact compiler (macOS/Linux)
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
-source ~/.bashrc && compact update
+# macOS uses zsh — reload the right rc file, or just open a new shell:
+source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
+compact update            # installs the default compiler (compactc)
+compact --version         # sanity check
 
 # 2. Compile the contract and copy ZK assets into public/
 compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits
@@ -57,7 +62,18 @@ cp -r contracts/managed/tokenized-choreo-kits/keys public/keys
 cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir
 
 # 3. Bring up the local Midnight stack (node + indexer + proof server)
-bun scripts/midnight-standalone.mjs up   # first run pulls ~1 GB
+docker compose up -d       # first run pulls ~1 GB
+docker compose ps          # all three services should be "Up"
+```
+
+Docker cheat sheet:
+
+```bash
+docker compose logs -f proof-server   # tail proof server (Ctrl+C to detach)
+docker compose logs -f node           # tail chain node
+docker compose down                    # stop everything (keeps chain data)
+docker compose down -v                 # stop + wipe the chain data volume
+# equivalent shortcuts: scripts/midnight-stack.sh {up|down|logs [svc]|ps|reset}
 ```
 
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.

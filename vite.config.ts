@@ -5,8 +5,33 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import type { Plugin } from "vite";
+import path from "node:path";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
+
+/**
+ * Midnight WASM packages only expose `browser` and `node` export conditions.
+ * The Cloudflare workerd SSR resolver looks for `workerd`/`worker`/`wasm` and
+ * fails. The home route is ssr:false, so we stub these out during the SSR
+ * bundle pass; they are never executed server-side.
+ */
+function midnightSsrStub(): Plugin {
+  const stub = path.resolve("src/lib/midnight-ssr-stub.ts");
+  const targets = new Set([
+    "@midnight-ntwrk/ledger-v8",
+    "@midnight-ntwrk/onchain-runtime-v3",
+  ]);
+  return {
+    name: "midnight-ssr-stub",
+    enforce: "pre",
+    resolveId(id, _importer, options) {
+      if (options?.ssr && targets.has(id)) {
+        return stub;
+      }
+    },
+  };
+}
 
 export default defineConfig({
   tanstackStart: {
@@ -15,7 +40,7 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
-    plugins: [wasm(), topLevelAwait()],
+    plugins: [midnightSsrStub(), wasm(), topLevelAwait()],
     build: { target: "esnext" },
     resolve: {
       conditions: ["browser", "import", "default"],

@@ -56,14 +56,46 @@ source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
 compact update            # installs the default compiler (compactc)
 compact --version         # sanity check
 
-# 2. Compile the contract and copy ZK assets into public/
+# 2. Install JS dependencies
+bun install
+```
+
+## Quick start — everything in one command
+
+Once the compiler is installed, `bun run compile` chains the whole local flow:
+
+```bash
+bun run compile
+```
+
+It runs, in order:
+
+1. `bun run midnight:compile` — compile the Compact contract and copy ZK assets into `public/`.
+2. `bun run midnight:up` — start the local Midnight stack (node + indexer + proof server) via Docker.
+3. `VITE_NETWORK_ID=undeployed bun scripts/deploy-midnight.mjs` — deploy the contract and write the address to `.env`.
+4. `bun run dev` — start the Vite dev server.
+
+First run pulls ~1 GB of Docker images and the initial ZK key generation can
+take 30–120 s. After that, subsequent runs reuse the compiled assets and chain
+state.
+
+## Step-by-step (if you prefer manual control)
+
+```bash
+# Compile the contract and copy ZK assets into public/
 compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits
 cp -r contracts/managed/tokenized-choreo-kits/keys public/keys
 cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir
 
-# 3. Bring up the local Midnight stack (node + indexer + proof server)
+# Bring up the local Midnight stack (node + indexer + proof server)
 docker compose up -d       # first run pulls ~1 GB
 docker compose ps          # all three services should be "Up"
+
+# Deploy the contract and save the address to .env
+VITE_NETWORK_ID=undeployed bun scripts/deploy-midnight.mjs
+
+# Start the app
+bun run dev
 ```
 
 Docker cheat sheet:
@@ -79,25 +111,17 @@ docker compose down -v                 # stop + wipe the chain data volume
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.
 The genesis wallet is pre-funded with unlimited tDUST — no faucet.
 
-## Deploy the contract
-
-```bash
-VITE_NETWORK_ID=undeployed bun scripts/deploy-midnight.mjs
-# → prints a hex contract address
-```
-
-Paste the hex address into the **Deploy contract** panel in the app (or set
-`VITE_DEFAULT_CONTRACT` in your `.env`).
-
 ## Run the app
 
+If you already deployed and just want to restart the UI:
+
 ```bash
-cp .env.example .env
-bun install
+cp .env.example .env   # only if you don't have a .env yet
 bun run dev
 ```
 
-Open the preview, connect Lace, paste the deployed contract address, and mint kits.
+Open the preview, connect Lace, and mint kits. The deploy script already wrote
+`VITE_DEFAULT_CONTRACT` to `.env`, so the contract address should be pre-filled.
 
 ## Environment
 

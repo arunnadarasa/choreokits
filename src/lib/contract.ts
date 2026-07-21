@@ -123,7 +123,7 @@ class LaceWalletProvider implements WalletProvider {
     return this.encryptionPublicKey;
   }
 
-  async balanceTx(tx: UnboundTransaction, _ttl?: Date): Promise<FinalizedTransaction> {
+  async balanceTx(tx: UnprovenTransaction, _ttl?: Date): Promise<FinalizedTransaction> {
     const hex = Buffer.from(tx.serialize()).toString("hex");
     const { tx: balancedHex } = await this.api.balanceUnsealedTransaction(hex, { payFees: true });
     const bytes = Buffer.from(balancedHex, "hex");

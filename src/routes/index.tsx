@@ -113,7 +113,7 @@ function Demo() {
       <DeployPanel
         walletConnected={!!walletAddr}
         address={contractAddr}
-        onDeployed={(a) => {
+        onDeployed={(a: string) => {
           setContractAddr(a);
           setRefreshTick((t) => t + 1);
         }}

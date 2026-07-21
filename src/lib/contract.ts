@@ -47,9 +47,11 @@ export async function loadContractModule(): Promise<ContractModule | null> {
   if (contractModuleCache) return contractModuleCache;
   if (typeof window === "undefined") return null;
   try {
-    const mod: any = await import(
-      /* @vite-ignore */ "../../contracts/managed/tokenized-choreo-kits/contract/index.cjs"
-    );
+    // Path is resolved at dev/build time by Vite (CJS→ESM via commonjsOptions).
+    // Wrapped in a variable + @vite-ignore so typecheck doesn't require the file to exist
+    // in every environment (it's produced by `bun run midnight:compile`).
+    const p = "../../contracts/managed/tokenized-choreo-kits/contract/index.cjs";
+    const mod: any = await import(/* @vite-ignore */ p);
     contractModuleCache = (mod.default ?? mod) as ContractModule;
     return contractModuleCache;
   } catch (err) {

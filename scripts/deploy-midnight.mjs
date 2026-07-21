@@ -9,9 +9,14 @@
 // the dev server picks it up automatically.
 
 import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { WebSocket } from "ws";
+
+const execFileP = promisify(execFile);
+
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { deployContract } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
@@ -53,10 +58,34 @@ const ZK_CONFIG_PATH = path.resolve(
   "tokenized-choreo-kits",
 );
 
-async function waitForService(url, name, timeoutMs = 120_000) {
+async function checkContainerHealthy(name) {
+  try {
+    const { stdout } = await execFileP("docker", [
+      "inspect",
+      name,
+      "--format",
+      "{{.State.Status}}",
+    ]);
+    const status = stdout.trim();
+    if (status === "restarting" || status === "exited" || status === "dead") {
+      throw new Error(
+        `Container '${name}' is ${status}. Run:\n\n  docker compose logs --tail=80 ${name.replace(
+          /^midnight-/,
+          "",
+        )}\n\nto see the crash reason.`,
+      );
+    }
+  } catch (e) {
+    if (e.message?.startsWith("Container ")) throw e;
+    // docker not available or container missing — let waitForService handle it
+  }
+}
+
+async function waitForService(url, name, timeoutMs = 120_000, containerName) {
   const start = Date.now();
   logger.info(`Waiting for ${name} at ${url}...`);
   while (Date.now() - start < timeoutMs) {
+    if (containerName) await checkContainerHealthy(containerName);
     try {
       const resp = await fetch(url, { method: "POST", body: JSON.stringify({ query: "{ __typename }" }) });
       if (resp.status < 500) {
@@ -70,6 +99,7 @@ async function waitForService(url, name, timeoutMs = 120_000) {
   }
   throw new Error(`${name} at ${url} did not become ready within ${timeoutMs}ms`);
 }
+
 
 async function main() {
   if (NETWORK_ID !== "undeployed") {
@@ -89,9 +119,11 @@ async function main() {
     );
   }
 
-  // Wait for the stack to be ready.
-  await waitForService(INDEXER_URL, "indexer");
-  await waitForService(PROOF_SERVER_URL, "proof-server", 180_000);
+  // Wait for the stack to be ready. Pass container names so we fail fast if
+  // the node is crash-looping instead of waiting the full timeout.
+  await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
+  await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
+
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,

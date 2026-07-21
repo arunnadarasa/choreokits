@@ -125,12 +125,13 @@ class LaceWalletProvider implements WalletProvider {
     return this.encryptionPublicKey;
   }
 
-  async balanceTx(tx: any, _ttl?: Date): Promise<FinalizedTransaction> {
+  async balanceTx(tx: any, _ttl?: Date): Promise<UnprovenTransaction> {
     const hex = Buffer.from(tx.serialize()).toString("hex");
     const { tx: balancedHex } = await this.api.balanceUnsealedTransaction(hex, { payFees: true });
     const bytes = Buffer.from(balancedHex, "hex");
-    const { Transaction } = await import("@midnight-ntwrk/midnight-js-protocol/ledger");
-    return Transaction.deserialize("signature" as never, "proof" as never, "binding" as never, bytes) as FinalizedTransaction;
+    const mod: any = await import("@midnight-ntwrk/midnight-js-protocol/ledger");
+    const Unproven = mod.UnprovenTransaction ?? mod.default?.UnprovenTransaction;
+    return Unproven.deserialize(bytes) as UnprovenTransaction;
   }
 }
 
@@ -139,7 +140,18 @@ class LaceMidnightProvider implements MidnightProvider {
 
   async submitTx(tx: FinalizedTransaction): Promise<TransactionId> {
     const hex = Buffer.from(tx.serialize()).toString("hex");
-    await this.api.submitTransaction(hex);
+    try {
+      await this.api.submitTransaction(hex);
+    } catch (e) {
+      const msg = e instanceof Error && e.message
+        ? e.message
+        : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+      console.error("Lace submitTransaction failed:", e);
+      if (/already|duplicate|known/i.test(msg)) {
+        return tx.transactionHash();
+      }
+      throw new Error(`Lace rejected submission: ${msg || "unknown error"}`);
+    }
     return tx.transactionHash();
   }
 }

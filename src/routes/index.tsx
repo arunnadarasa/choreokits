@@ -9,6 +9,7 @@ const PublishKitForm = lazy(() => import("@/components/PublishKitForm"));
 const KitFeed = lazy(() => import("@/components/KitFeed"));
 
 export const Route = createFileRoute("/")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Tokenized Choreo Kits — ZK licensing for choreography" },

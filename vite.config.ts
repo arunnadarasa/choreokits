@@ -75,13 +75,6 @@ export default defineConfig({
       esbuildOptions: { target: "esnext", supported: { "top-level-await": true } },
       include: [
         "@midnight-ntwrk/compact-runtime",
-        "abstract-level",
-        "browser-level",
-        "level-transcoder",
-        "module-error",
-        "catering",
-        "queue-microtask",
-        "maybe-combine-errors",
       ],
       exclude: [
         "@midnight-ntwrk/onchain-runtime-v3",

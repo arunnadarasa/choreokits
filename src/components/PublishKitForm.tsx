@@ -1,11 +1,15 @@
+import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { useCallback, useEffect, useState } from "react";
+import { publishKit } from "@/lib/contract";
 
 export function PublishKitForm({
   walletConnected,
+  walletApi,
   contractAddress,
   onPublished,
 }: {
   walletConnected: boolean;
+  walletApi: ConnectedAPI | null;
   contractAddress: string | null;
   onPublished: (payload: KitPayload) => void;
 }) {
@@ -52,18 +56,22 @@ export function PublishKitForm({
       local.unshift(payload);
       localStorage.setItem("choreo:local-kits", JSON.stringify(local.slice(0, 20)));
 
-      // Attempt real submit via MidnightJS if available; otherwise simulate the
-      // Proving state so the demo remains usable on the Undeployed target.
-      const pkg = "@midnight-ntwrk/midnight-js-contracts";
-      const contractsMod = await import(/* @vite-ignore */ pkg).catch(() => null);
-      if (!contractsMod) {
-        // Simulate a realistic proving window (2s) so users see the UX.
+      if (!walletApi) {
         await new Promise((r) => setTimeout(r, 2000));
-        setOk(
-          "Kit staged locally. To broadcast on-chain, wire the compiled contract into src/lib/contract.ts and run against the local proof server.",
-        );
+        setOk("Kit staged locally. Connect Lace and set a deployed contract to broadcast on-chain.");
+      } else if (!contractAddress) {
+        throw new Error("Set the deployed contract address in step 2 first.");
       } else {
-        setOk("Submitted to local proof server. Watch the feed for confirmation.");
+        const networkId = (import.meta.env.VITE_NETWORK_ID as string) || "undeployed";
+        const txId = await publishKit(
+          walletApi,
+          networkId,
+          contractAddress,
+          payload.title,
+          payload.steps,
+          payload.priceDust,
+        );
+        setOk(`Submitted on-chain. Tx: ${txId.slice(0, 24)}…`);
       }
       onPublished(payload);
       setTitle("");
@@ -74,7 +82,7 @@ export function PublishKitForm({
       setProving(false);
       setElapsed(0);
     }
-  }, [walletConnected, contractAddress, title, steps, priceDust, onPublished]);
+  }, [walletConnected, walletApi, contractAddress, title, steps, priceDust, onPublished]);
 
   const disabled = proving || !walletConnected || !contractAddress;
 

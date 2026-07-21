@@ -119,9 +119,11 @@ async function main() {
     );
   }
 
-  // Wait for the stack to be ready.
-  await waitForService(INDEXER_URL, "indexer");
-  await waitForService(PROOF_SERVER_URL, "proof-server", 180_000);
+  // Wait for the stack to be ready. Pass container names so we fail fast if
+  // the node is crash-looping instead of waiting the full timeout.
+  await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
+  await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
+
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,

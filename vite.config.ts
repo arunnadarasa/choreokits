@@ -36,6 +36,15 @@ function midnightSsrStub(): Plugin {
   };
 }
 
+function clientTopLevelAwait(): Plugin {
+  return {
+    ...topLevelAwait(),
+    applyToEnvironment(environment) {
+      return environment.name === "client";
+    },
+  };
+}
+
 export default defineConfig({
   // MidnightJS is client-only. The home route is `ssr: false` and
   // midnightSsrStub() below redirects the WASM packages to empty stubs during
@@ -46,7 +55,7 @@ export default defineConfig({
     server: { entry: "server" },
   },
   vite: {
-    plugins: [midnightSsrStub(), wasm(), topLevelAwait()],
+    plugins: [midnightSsrStub(), wasm(), clientTopLevelAwait()],
     build: { target: "esnext" },
     resolve: {
       conditions: ["browser", "import", "default"],

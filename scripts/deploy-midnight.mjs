@@ -130,6 +130,10 @@ async function main() {
   await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
   await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
 
+  // Wait until the node is actually producing blocks. Without this the wallet
+  // stamps ttlOneHour() against a stale tip and the tx is rejected with
+  // "1010: Invalid Transaction: Custom error: 171".
+  await waitForBlockHeight(INDEXER_URL, 2, 60_000);
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,
@@ -148,7 +152,7 @@ async function main() {
     .withDustOptions({
       ledgerParams: LedgerParameters.initialParameters(),
       additionalFeeOverhead: 1_000n,
-      feeBlocksMargin: 5,
+      feeBlocksMargin: 15,
     })
     .buildWithoutStarting();
 
@@ -159,10 +163,10 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
-  // Give the wallet a moment to catch up with genesis blocks so its dust UTXO
-  // is visible before we try to balance the deploy tx.
-  logger.info("Waiting for genesis dust to sync (up to 60s)...");
-  await setTimeout(15_000);
+  // Wait until the wallet reports it has synced to the tip AND sees a non-zero
+  // dust balance. Fixed 15s sleeps race with WS reconnects on a cold chain.
+  await waitForWalletReady(wallet, 90_000);
+
 
 
   const coinPublicKey = zswapSecretKeys.coinPublicKey;

@@ -17,8 +17,9 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * bundle pass; they are never executed server-side.
  */
 function midnightSsrStub(): Plugin {
-  const stub = path.resolve("src/lib/midnight-ssr-stub.ts");
-  const targets = new Set([
+  const wasmStub = path.resolve("src/lib/midnight-ssr-stub.ts");
+  const contractStub = path.resolve("src/lib/contract.ssr-stub.ts");
+  const wasmTargets = new Set([
     "@midnight-ntwrk/ledger-v8",
     "@midnight-ntwrk/onchain-runtime-v3",
   ]);
@@ -26,9 +27,9 @@ function midnightSsrStub(): Plugin {
     name: "midnight-ssr-stub",
     enforce: "pre",
     resolveId(id, _importer, options) {
-      if (options?.ssr && targets.has(id)) {
-        return stub;
-      }
+      if (!options?.ssr) return;
+      if (wasmTargets.has(id)) return wasmStub;
+      if (id === "@/lib/contract") return contractStub;
     },
   };
 }

@@ -29,6 +29,7 @@ import {
   ZswapSecretKeys,
   DustSecretKey,
 } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { ttlOneHour } from "@midnight-ntwrk/midnight-js-utils";
 import pino from "pino";
 
 // GraphQL subscriptions need a WebSocket global in Node.
@@ -180,7 +181,8 @@ async function main() {
     walletProvider: {
       getCoinPublicKey: () => coinPublicKey,
       getEncryptionPublicKey: () => zswapSecretKeys.encryptionPublicKey,
-      balanceTx: async (tx, ttl) => {
+      balanceTx: async (tx) => {
+        const ttl = ttlOneHour();
         const recipe = await wallet.balanceUnboundTransaction(
           tx,
           { shieldedSecretKeys: zswapSecretKeys, dustSecretKey },
@@ -193,7 +195,8 @@ async function main() {
     midnightProvider: {
       getCoinPublicKey: () => coinPublicKey,
       getEncryptionPublicKey: () => zswapSecretKeys.encryptionPublicKey,
-      balanceTx: async (tx, ttl) => {
+      balanceTx: async (tx) => {
+        const ttl = ttlOneHour();
         const recipe = await wallet.balanceUnboundTransaction(
           tx,
           { shieldedSecretKeys: zswapSecretKeys, dustSecretKey },

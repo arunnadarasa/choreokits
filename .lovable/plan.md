@@ -1,42 +1,52 @@
 ## Root cause
 
-`midnight-node:2.0.0-rc.4` is a Partner Chain build. On boot it validates:
+`midnight-node:2.0.0-rc.4` is a **Partner Chain** build. It requires either a Cardano `db-sync` Postgres OR a `mock_registrations_file`. It is the wrong image for a standalone `--dev` Midnight chain — we've been fighting its config layer instead of using the image Midnight actually publishes for local dev.
 
-```
-db_sync_postgres_connection_string must be defined if ariadne is enabled
-(i.e. if use_main_chain_follower_mock is false)
-```
+## Fix — adopt the official `midnightntwrk/midnight-local-dev` stack
 
-It's trying to connect to a Cardano `db-sync` Postgres because the "Ariadne" main-chain follower is enabled by default. For a local standalone `--dev` stack we don't have (or want) Cardano — we need the **mock main-chain follower** enabled.
+Replace our hand-rolled `docker-compose.yml` with the shape from the official `midnight-local-dev/standalone.yml` repo. That means changing three pinned images and switching from CLI flags to `CFG_PRESET=dev`, plus adding the required indexer env vars.
 
-## Fix
+### 1. `docker-compose.yml`
 
-Update `docker-compose.yml` so the `node` service sets the mock follower env var (and a couple of companion vars the RC build expects), so the node boots cleanly without Postgres.
+- `proof-server`: `midnightntwrk/proof-server:8.0.3` (pinned; drop `:latest`)
+- `node`: `midnightntwrk/midnight-node:0.22.5`
+  - Drop all CLI args
+  - Set `CFG_PRESET: dev` and `SIDECHAIN_BLOCK_BENEFICIARY: 04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e`
+  - Healthcheck: `curl -f http://localhost:9944/health`
+- `indexer`: `midnightntwrk/indexer-standalone:4.0.2`
+  - `APP__INFRA__NODE__URL: ws://node:9944`
+  - `APP__APPLICATION__NETWORK_ID: undeployed`
+  - `APP__INFRA__STORAGE__PASSWORD`, `APP__INFRA__PUB_SUB__PASSWORD`, `APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD`: `indexer`
+  - `APP__INFRA__SECRET`: `303132333435363738393031323334353637383930313233343536373839303132`
+  - `depends_on: node: condition: service_healthy`
+- Keep the node data volume; drop the Partner-Chain env vars (`USE_MAIN_CHAIN_FOLLOWER_MOCK`, etc.).
+- Keep `restart: "no"` on the node so crashes surface immediately.
 
-### Change (single file)
+### 2. `.env.example` + deploy script — Indexer path changes to v4
 
-`docker-compose.yml` → `node` service, add under `environment:`:
+The official standalone indexer serves `/api/v4/graphql`, not v3.
 
-```yaml
-environment:
-  USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
-  SHOW_SECRETS: "1"        # so any remaining config error prints readable
-  APP__MAIN_CHAIN_FOLLOWER_MOCK__ENABLED: "true"
-```
+- `.env.example`:
+  - `VITE_INDEXER_URL=http://localhost:8088/api/v4/graphql`
+  - `VITE_INDEXER_WS_URL=ws://localhost:8088/api/v4/graphql/ws`
+- `scripts/deploy-midnight.mjs` default `INDEXER_URL` and `INDEXER_WS_URL` → v4.
 
-Exact env var name may be `USE_MAIN_CHAIN_FOLLOWER_MOCK` (matches the error text). If the container still rejects it, the fallback is to pin to a non-Partner-Chain tag (e.g. `midnightntwrk/midnight-node:0.12.0` or `:latest-main`) which does not require Ariadne config. I'll try the env var first because it keeps the pinned image you already documented.
+### 3. `src/lib/*` — anywhere v3 is hardcoded
 
-### Also
+- Update any hardcoded `/api/v3/graphql` in the frontend (KitFeed poller, providers module) to v4.
 
-- Add `restart: "no"` on the node service so a crash surfaces immediately instead of Docker hiding it in a restart loop.
-- `scripts/deploy-midnight.mjs`: before polling the indexer, check `docker inspect midnight-node --format '{{.State.Status}}'`. If it's `restarting` or `exited`, print `docker compose logs --tail=80 node` hint and exit fast (no more 120s hangs).
-- README: add a short "Troubleshooting" note documenting the mock-follower env var and the fast-fail behavior.
+### 4. `README.md`
+
+- Update the "Image tags" section to list the new pins (`node:0.22.5`, `indexer-standalone:4.0.2`, `proof-server:8.0.3`) and mention that they come from the official `midnight-local-dev/standalone.yml`.
+- Update the "Environment" section to show `/api/v4/graphql`.
+- Refresh the Troubleshooting note: remove the mock-follower text, keep the fast-fail on `midnight-node` and the `docker compose down -v` reset step.
 
 ## Your steps after I apply the fix
 
 ```bash
-docker compose down -v
+docker compose down -v          # wipe old chain data
+docker compose pull             # fetch the new pinned images (~1 GB)
 bun run compile
 ```
 
-If the node still crashes with a different config error, paste the new `docker compose logs --tail=80 node` and I'll pivot to swapping the image tag.
+If anything still fails, paste the fresh `docker compose logs --tail=80 node` (or indexer) and I'll patch from there.

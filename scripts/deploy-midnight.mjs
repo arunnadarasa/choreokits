@@ -46,8 +46,9 @@ const ALICE_LOCAL_SEED =
 const NETWORK_ID = process.env.VITE_NETWORK_ID ?? "undeployed";
 const NODE_WS = process.env.VITE_NODE_WS ?? "ws://localhost:9944";
 const NODE_HTTP = NODE_WS.replace("ws://", "http://").replace("wss://", "https://");
-const INDEXER_URL = process.env.VITE_INDEXER_URL ?? "http://localhost:8088/api/v3/graphql";
-const INDEXER_WS_URL = process.env.VITE_INDEXER_WS_URL ?? "ws://localhost:8088/api/v3/graphql/ws";
+const INDEXER_URL = process.env.VITE_INDEXER_URL ?? "http://localhost:8088/api/v4/graphql";
+const INDEXER_WS_URL = process.env.VITE_INDEXER_WS_URL ?? "ws://localhost:8088/api/v4/graphql/ws";
+
 const PROOF_SERVER_URL = process.env.VITE_PROOF_SERVER_URL ?? "http://localhost:6300";
 
 const ZK_CONFIG_PATH = path.resolve(

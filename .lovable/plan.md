@@ -1,28 +1,11 @@
-## Problem
-
-`docker compose up` failed because `midnightntwrk/midnight-node:latest` doesn't exist on Docker Hub — that repo publishes only versioned tags (e.g. `2.0.0-rc.4`, `latest-main`). `indexer-standalone` has `latest`, but pairing it with an unversioned node is fragile. Proof-server pulled fine (already running in your Docker Desktop screenshot).
-
 ## Fix
 
-Pin all three services in `docker-compose.yml` to explicit, known-good tags that match Compact 0.23 / MidnightJS 4.1.x:
+Revert `proof-server` image to `midnightntwrk/proof-server:latest` in `docker-compose.yml` (the `4.0.0` tag I picked doesn't exist upstream — valid tags jump `8.x` → `9.0.0-rc.x`). Keep the pinned tags for `midnight-node:2.0.0-rc.4` and `indexer-standalone:4.3.3`. Update the README's "Image tags" section to match.
 
-- `midnightntwrk/proof-server:4.0.0` (or keep `latest` — this one works)
-- `midnightntwrk/midnight-node:2.0.0-rc.4`
-- `midnightntwrk/indexer-standalone:4.3.3`
-
-Update `README.md` to note that first `docker compose pull` may take a few minutes on the new tags.
+You don't need to delete the running `midnight-proof-server` container — it was pulled from `:latest` and Compose will re-adopt it.
 
 ## Steps
 
-1. Edit `docker-compose.yml` — replace the three `image:` lines with pinned tags above.
-2. Add a short "Image tags" note in `README.md` explaining why they're pinned (upstream doesn't publish `:latest` for the node).
-3. You then re-run:
-   ```
-   docker compose pull
-   bun run compile
-   ```
-
-## Notes
-
-- Your proof-server container is already healthy on `:6300`, so only node + indexer need to come up.
-- If `2.0.0-rc.4` node rejects the compiled contract (ledger version mismatch), fallback is `latest-main` (rolling dev tag) — I'll call that out in the README.
+1. Edit `docker-compose.yml`: `proof-server:4.0.0` → `proof-server:latest`.
+2. Edit `README.md` "Image tags" bullet accordingly.
+3. Re-run `bun run compile`.

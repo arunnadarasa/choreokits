@@ -114,7 +114,7 @@ docker compose down -v                 # stop + wipe the chain data volume
 Upstream does **not** publish `midnightntwrk/midnight-node:latest`. `docker-compose.yml`
 pins known-good tags matching Compact 0.23 / MidnightJS 4.1.x:
 
-- `proof-server:4.0.0`
+- `proof-server:latest` (upstream publishes this one; safe to use)
 - `midnight-node:2.0.0-rc.4`
 - `indexer-standalone:4.3.3`
 

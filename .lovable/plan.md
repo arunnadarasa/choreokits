@@ -1,18 +1,28 @@
 ## Diagnosis
 
-The published site 500s with:
+The published site is failing before the React app can render. Server logs show:
+
+```text
+SyntaxError: Identifier '__tla' has already been declared
 ```
-Error: No such module "assets/react". imported from "assets/server-CNx9r4ch.js"
-```
 
-This is a Cloudflare workerd bundling issue, not a Midnight error. Setting `nitro: false` in `vite.config.ts` disabled the Cloudflare worker bundler, so the SSR entry gets built as a plain code-split Node-style bundle with sibling chunks (`assets/react.js`, etc.). workerd can't resolve dynamic sibling chunks — it only loads what's inlined into the single worker script — so every request 500s before any of our code runs.
+This points to the `vite-plugin-top-level-await` transform colliding in the Cloudflare/Nitro server bundle. The current config applies `topLevelAwait()` globally, so it can rewrite both client and SSR chunks. The Midnight code that needs WASM/top-level-await is client-only, and SSR already stubs Midnight modules plus disables SSR for the home route.
 
-We turned nitro off originally to keep Midnight WASM out of the SSR bundle, but we already have `midnightSsrStub()` in `vite.config.ts` that redirects `@midnight-ntwrk/ledger-v8`, `@midnight-ntwrk/onchain-runtime-v3`, and `@/lib/contract` to empty stubs during SSR, plus the home route is `ssr: false`. Nitro is safe to re-enable.
+## Plan
 
-## Fix
+1. **Constrain the top-level-await plugin to the browser build only**
+   - Replace the direct `topLevelAwait()` usage in `vite.config.ts` with a small wrapper plugin.
+   - The wrapper will return the real plugin only when `configEnvironment.name === "client"`.
+   - SSR/Nitro builds will no longer receive generated `__tla` declarations.
 
-1. **`vite.config.ts`** — remove `nitro: false` so the Cloudflare worker bundler runs and produces a single inlined worker script. Keep `midnightSsrStub()`, the WASM plugins, and the SSR resolve conditions.
-2. **Verify** — re-publish, load `https://choreokits.lovable.app/` on the phone. Expect the app shell to render, then the ssr:false home route to hydrate and boot Midnight client-side.
-3. If SSR still complains about a Midnight symbol we haven't stubbed, add it to the `wasmTargets` set in `midnightSsrStub` (same pattern as the existing two entries) and republish.
+2. **Keep the existing Midnight SSR safety net**
+   - Leave `tanstackStart.server.entry = "server"` in place.
+   - Keep `midnightSsrStub()` so `@midnight-ntwrk/*` packages and `src/lib/contract.ts` are not bundled into SSR runtime code.
+   - Keep Nitro enabled so the published worker remains a single deployable server bundle.
 
-No changes to the Midnight contract, deploy script, or Docker stack.
+3. **Verify locally with the production build path**
+   - Run the production build after the config change.
+   - Confirm the previous build errors and `__tla` collision are gone.
+
+4. **Publish after the build passes**
+   - Once approved and fixed, use the Publish button / Update flow so the published `choreokits.lovable.app` URL gets the corrected bundle.

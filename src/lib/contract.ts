@@ -125,13 +125,13 @@ class LaceWalletProvider implements WalletProvider {
     return this.encryptionPublicKey;
   }
 
-  async balanceTx(tx: any, _ttl?: Date): Promise<UnprovenTransaction> {
+  async balanceTx(tx: any, _ttl?: Date): Promise<FinalizedTransaction> {
     const hex = Buffer.from(tx.serialize()).toString("hex");
     const { tx: balancedHex } = await this.api.balanceUnsealedTransaction(hex, { payFees: true });
     const bytes = Buffer.from(balancedHex, "hex");
     const mod: any = await import("@midnight-ntwrk/midnight-js-protocol/ledger");
     const Unproven = mod.UnprovenTransaction ?? mod.default?.UnprovenTransaction;
-    return Unproven.deserialize(bytes) as UnprovenTransaction;
+    return Unproven.deserialize(bytes) as unknown as FinalizedTransaction;
   }
 }
 

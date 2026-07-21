@@ -29,6 +29,7 @@ import {
   ZswapSecretKeys,
   DustSecretKey,
 } from "@midnight-ntwrk/midnight-js-protocol/ledger";
+import { ttlOneHour } from "@midnight-ntwrk/midnight-js-utils";
 import pino from "pino";
 
 // GraphQL subscriptions need a WebSocket global in Node.

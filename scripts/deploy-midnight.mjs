@@ -9,9 +9,14 @@
 // the dev server picks it up automatically.
 
 import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { WebSocket } from "ws";
+
+const execFileP = promisify(execFile);
+
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { deployContract } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";

@@ -39,9 +39,11 @@ const logger = pino({
   transport: { target: "pino-pretty" },
 });
 
-// Local devnet genesis wallet #1 — pre-funded with tDUST on Undeployed.
+// Local devnet genesis-mint wallet — pre-funded with tDUST on the standalone
+// chain (see @midnight-ntwrk/testkit-js LocalTestEnvironment.genesisMintWalletSeed[0]).
 const ALICE_LOCAL_SEED =
-  "0000000000000000000000000000000000000000000000000000000000000001";
+  "0000000000000000000000000000000000000000000000000000000000000002";
+
 
 const NETWORK_ID = process.env.VITE_NETWORK_ID ?? "undeployed";
 const NODE_WS = process.env.VITE_NODE_WS ?? "ws://localhost:9944";

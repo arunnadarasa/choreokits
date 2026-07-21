@@ -229,11 +229,27 @@ async function main() {
   );
 
   logger.info("Deploying TokenizedChoreoKits contract...");
-  const deployed = await deployContract(providers, {
-    compiledContract,
-    privateStateId: "choreo-kits-deployer",
-    initialPrivateState: { localSecretKey: deployerSecret },
-  });
+  let deployed;
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      deployed = await deployContract(providers, {
+        compiledContract,
+        privateStateId: `choreo-kits-deployer-${Date.now()}-${attempt}`,
+        initialPrivateState: { localSecretKey: deployerSecret },
+      });
+      break;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes("Insufficient Funds") && attempt < maxAttempts) {
+        logger.warn(`Dust not yet synced (attempt ${attempt}/${maxAttempts}); retrying in 10s...`);
+        await setTimeout(10_000);
+        continue;
+      }
+      throw e;
+    }
+  }
+
 
 
   const contractAddress = deployed.deployTxData.public.contractAddress;

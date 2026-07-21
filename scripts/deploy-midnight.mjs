@@ -180,7 +180,8 @@ async function main() {
     walletProvider: {
       getCoinPublicKey: () => coinPublicKey,
       getEncryptionPublicKey: () => zswapSecretKeys.encryptionPublicKey,
-      balanceTx: async (tx, ttl) => {
+      balanceTx: async (tx) => {
+        const ttl = ttlOneHour();
         const recipe = await wallet.balanceUnboundTransaction(
           tx,
           { shieldedSecretKeys: zswapSecretKeys, dustSecretKey },
@@ -193,7 +194,8 @@ async function main() {
     midnightProvider: {
       getCoinPublicKey: () => coinPublicKey,
       getEncryptionPublicKey: () => zswapSecretKeys.encryptionPublicKey,
-      balanceTx: async (tx, ttl) => {
+      balanceTx: async (tx) => {
+        const ttl = ttlOneHour();
         const recipe = await wallet.balanceUnboundTransaction(
           tx,
           { shieldedSecretKeys: zswapSecretKeys, dustSecretKey },

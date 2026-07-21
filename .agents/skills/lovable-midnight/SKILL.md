@@ -251,14 +251,48 @@ Add a `checkContainerHealthy('node')` shell probe (parse `docker inspect`) befor
 | ⑧ | Retry deploy 8× / 10 s with a **fresh `privateStateId`** each attempt. |
 | ⑨ | `initialPrivateState: { localSecretKey: <32B> }` — required or constructor throws. |
 
+## Publishing to Cloudflare Workers (TanStack Start) — READ FIRST
+
+The preview passing means nothing. The published Cloudflare Worker bundle has completely different failure modes than Vite dev. Enable the production build + Publish → Update **on day one** and fix these as they surface — don't discover them the night before submission.
+
+Four hard rules for the workerd/Nitro SSR bundle:
+
+1. **Keep `nitro` ENABLED.** Do NOT set `nitro: false` to "escape SSR". That splits the SSR output into multiple chunks (`assets/server-*.js` importing `assets/react-*.js`) that the Worker runtime can't resolve — you get `Error: No such module "assets/react"` on every request. The Worker needs a single inlined script.
+2. **Restrict `vite-plugin-top-level-await` to the client environment only.** Applied to the SSR bundle it crashes the worker with `Identifier '__tla' has already been declared`. Wrap it:
+   ```ts
+   function clientTopLevelAwait(): Plugin {
+     return { ...topLevelAwait(), applyToEnvironment: (env) => env.name === "client" };
+   }
+   ```
+3. **Stub every Midnight package AND the client contract module during the SSR pass.** `ssr: false` on the route stops execution but does NOT stop the bundler from crawling the module graph. Without stubs the build dies with `[MISSING_EXPORT] "ContractState" is not exported by "@midnight-ntwrk/midnight-js-protocol/dist/compact-runtime.mjs"` or `"createCircuitCallTxInterface" is not exported by "src/lib/midnight-ssr-stub.ts"`.
+   ```ts
+   function midnightSsrStub(): Plugin {
+     const wasmStub = path.resolve("src/lib/midnight-ssr-stub.ts");
+     const contractStub = path.resolve("src/lib/contract.ssr-stub.ts");
+     const contractReal = path.resolve("src/lib/contract.ts");
+     return {
+       name: "midnight-ssr-stub",
+       enforce: "pre",
+       async resolveId(id, importer, options) {
+         if (!options?.ssr) return;
+         if (id.startsWith("@midnight-ntwrk/")) return wasmStub;
+         const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
+         if (resolved && resolved.id === contractReal) return contractStub;
+         return resolved;
+       },
+     };
+   }
+   ```
+   The second half (resolve → swap by absolute path) is what catches `@/lib/contract`, `./contract`, and `./contract.ts` — every alias funnels to the same absolute path. Ship a matching empty `src/lib/midnight-ssr-stub.ts` (`export default {}`) and a `src/lib/contract.ssr-stub.ts` exporting inert stand-ins for every symbol the route imports (`publishKit`, `decodeChainState`, `KitPayload`, `loadContractModule`).
+4. **Never keep a top-level runtime `import` from `@midnight-ntwrk/*` in a route file.** Type-only `import type` is erased and safe; anything else forces the SSR crawler into the WASM package graph even with the stub. Prefer defining the `ConnectedAPI` shape locally or moving it into a client-only module.
+
 ## Frontend — TanStack Start specifics
 
-- Set `nitro: false` in `vite.config.ts` for the Midnight route path. WASM top-level-await + Node `Buffer` cannot cross the workerd SSR boundary; SSR builds fail with cryptic `MISSING_EXPORT` errors on `@midnight-ntwrk/*`.
-- Mark the Midnight page `ssr: false` in its route definition.
-- Add `vite-plugin-wasm` + `vite-plugin-top-level-await` to Vite plugins (already required for the SPA).
+- Mark every Midnight page `ssr: false` in the route definition (still required — the stubs above are the belt, `ssr: false` is the braces).
+- Add `vite-plugin-wasm` and `vite-plugin-top-level-await` (client-scoped, see rule #2) to Vite plugins.
 - `React.lazy()` of a component that uses **named exports** needs `.then(m => ({ default: m.MyNamed }))` — plain `lazy(() => import('./X'))` typechecks fail.
-- Contract-address regex must be `/^(0x)?[0-9a-fA-F]{6,}$/`. The intuitive `/^0x?[0-9a-fA-F]{6,}$/` requires a literal leading `0` and rejects any address that starts with `1–9` or `a–f` (very common — e.g. `d9e6…`).
-- Lace `getUnshieldedAddress()` returns EITHER `{ unshieldedAddress: string }` OR a raw `string` depending on the wallet build. Handle both:
+- Contract-address regex must be `/^(0x)?[0-9a-fA-F]{6,}$/`. The intuitive `/^0x?[0-9a-fA-F]{6,}$/` requires a literal leading `0` and rejects addresses that start with `1–9` or `a–f` (very common — e.g. `d9e6…`).
+- Lace `getUnshieldedAddress()` returns EITHER `{ unshieldedAddress: string }` OR a raw `string`. Handle both:
   ```ts
   const raw = await api.getUnshieldedAddress();
   const address = typeof raw === 'string' ? raw : raw.unshieldedAddress;
@@ -266,21 +300,61 @@ Add a `checkContainerHealthy('node')` shell probe (parse `docker inspect`) befor
 - Copy compiled artefacts to `public/contract/{keys,zkir,contract}/` in the compile script; serve them with a browser `FetchZKConfigProvider` that implements `get()` + `asKeyMaterialProvider()`.
 - SDK 0.22+ exports **`UnprovenTransaction`** — not `UnboundTransaction`. Old snippets are stale.
 
-## Vite config essentials (unchanged)
+## Private state provider — DO NOT ship `levelPrivateStateProvider` to the browser
+
+`levelPrivateStateProvider` pulls in `browser-level` → `abstract-level`, whose CJS/ESM interop breaks under production Rollup. Symptom on the published site (preview is fine — this ONLY appears in the prod bundle): a black screen and `TypeError: Class extends value undefined is not a constructor or null` from `browser-level-*.js`. There is no clean fix at the bundler layer; do not waste hours on `optimizeDeps.include` + `commonjsOptions` — it will not stick.
+
+Instead ship a tiny `localStorage`-backed `PrivateStateProvider<string, unknown>` from day one:
+
+- Key layout: `<prefix>:<coinPubKey>:contracts:<contractAddress>:states:<privateStateId>` and `<prefix>:<coinPubKey>:signing:<address>`.
+- JSON-encode `Uint8Array` as `{ __type: "Uint8Array", data: [...] }` and reverse on read.
+- Implement `setContractAddress`, `get/set/remove/clear`, `get/set/removeSigningKey`, `clearSigningKeys`; stub `exportPrivateStates`/`importPrivateStates`/`exportSigningKeys`/`importSigningKeys` — the demo doesn't need them.
+- Reference implementation lives in this project's `src/lib/contract.ts` (`createPrivateStateProvider`).
+
+Node deploy scripts CAN keep using `levelPrivateStateProvider` — the ban is browser-only. Node CJS interop is fine.
+
+## Debugging a black / "This page didn't load" published page on mobile
+
+Preview looks perfect, published shows the generic error boundary or a blank screen. The root `errorComponent` and the SSR fallback are hiding the real error. Playbook:
+
+1. Temporarily render `error.message` + `error.stack` inside the root TanStack `errorComponent` (`src/routes/__root.tsx`).
+2. Wrap the SSR entry (`src/server.ts`) in try/catch and inline the caught stack into the fallback HTML so SSR-only crashes are visible too.
+3. **Publish → Update** and reload on the phone — the real error is now readable.
+4. Common culprits ranked: (a) `browser-level` CJS interop, (b) `MISSING_EXPORT` from an un-stubbed `@midnight-ntwrk/*`, (c) `__tla` collision (TLA plugin in SSR), (d) `assets/react` module-not-found (`nitro: false`).
+5. Revert the verbose error UI once fixed — never ship stack traces to real users.
+
+## Vite config essentials (Cloudflare Worker target)
 
 ```ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from '@lovable.dev/vite-tanstack-config'; // Lovable template
+import type { Plugin } from 'vite';
+import path from 'node:path';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
+
+function midnightSsrStub(): Plugin { /* see "Publishing to Cloudflare Workers" above */ }
+function clientTopLevelAwait(): Plugin {
+  return { ...topLevelAwait(), applyToEnvironment: (env) => env.name === 'client' };
+}
+
 export default defineConfig({
-  build: { target: 'esnext', commonjsOptions: { transformMixedEsModules: true } },
-  plugins: [react(), wasm(), topLevelAwait()],
-  optimizeDeps: {
-    esbuildOptions: { target: 'esnext', supported: { 'top-level-await': true } },
-    include: ['@midnight-ntwrk/compact-runtime'],
-    exclude: ['@midnight-ntwrk/onchain-runtime-v3',
-              '@midnight-ntwrk/onchain-runtime-v3/midnight_onchain_runtime_wasm_bg.wasm'],
+  // Keep nitro ENABLED (default). Do NOT set nitro: false.
+  vite: {
+    plugins: [midnightSsrStub(), wasm(), clientTopLevelAwait()],
+    build: {
+      target: 'esnext',
+      commonjsOptions: { transformMixedEsModules: true, defaultIsModuleExports: 'auto' },
+    },
+    resolve: { conditions: ['browser', 'import', 'default'] },
+    ssr:     { resolve: { conditions: ['browser', 'node', 'import', 'default'] } },
+    optimizeDeps: {
+      esbuildOptions: { target: 'esnext', supported: { 'top-level-await': true } },
+      include: ['@midnight-ntwrk/compact-runtime'],
+      exclude: [
+        '@midnight-ntwrk/onchain-runtime-v3',
+        '@midnight-ntwrk/onchain-runtime-v3/midnight_onchain_runtime_wasm_bg.wasm',
+      ],
+    },
   },
 });
 ```

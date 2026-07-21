@@ -5,11 +5,25 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+  },
+  vite: {
+    plugins: [wasm(), topLevelAwait()],
+    build: { target: "esnext" },
+    optimizeDeps: {
+      esbuildOptions: { target: "esnext", supported: { "top-level-await": true } },
+      include: ["@midnight-ntwrk/compact-runtime"],
+      exclude: [
+        "@midnight-ntwrk/onchain-runtime-v3",
+        "@midnight-ntwrk/onchain-runtime-v3/midnight_onchain_runtime_wasm_bg.wasm",
+      ],
+    },
   },
 });

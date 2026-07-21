@@ -206,9 +206,9 @@ export async function publishKit(
     },
   };
 
-  const compiledContract = CompiledContract.withWitnesses(
-    CompiledContract.make("TokenizedChoreoKitsContract", Contract as any),
-    witnesses as any,
+  const compiledContract = (CompiledContract.withWitnesses as any)(
+    (CompiledContract.make as any)("TokenizedChoreoKitsContract", Contract),
+    witnesses,
   );
 
   const providers = {

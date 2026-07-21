@@ -53,13 +53,14 @@ export function KitFeed({
         setChainState(hex);
         setIndexerErr(null);
         const decoded = await decodeChainState(hex);
-        if (decoded.lastKit) {
+        const lastKit = decoded.lastKit;
+        if (lastKit) {
           setEntries((prev) => {
             const exists = prev.some(
-              (e) => e.source === "chain" && e.publishedAt === decoded.lastKit!.publishedAt,
+              (e) => e.source === "chain" && e.publishedAt === lastKit.publishedAt,
             );
             if (exists) return prev;
-            return [{ ...decoded.lastKit, source: "chain" }, ...prev];
+            return [{ ...lastKit, source: "chain" as const }, ...prev];
           });
         }
       } else {

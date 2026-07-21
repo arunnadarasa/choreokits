@@ -1,39 +1,28 @@
-# No code change needed — you just skipped `compact update`
+## Problem
 
-Your terminal output shows the real sequence of events:
+`docker compose up` failed because `midnightntwrk/midnight-node:latest` doesn't exist on Docker Hub — that repo publishes only versioned tags (e.g. `2.0.0-rc.4`, `latest-main`). `indexer-standalone` has `latest`, but pairing it with an unversioned node is fragile. Proof-server pulled fine (already running in your Docker Desktop screenshot).
 
-1. You pasted the whole block at once. zsh parsed the `source ... || source ... || true` line together with the next line's redirects and errored with `zsh: number expected`, then bailed.
-2. Because of that, **`compact update` never ran.** The `compact 0.5.1` you saw is the version-manager binary — the actual compiler (`compactc`) was never downloaded.
-3. `compact compile` therefore failed with *"No default compiler set"*, so `contracts/managed/tokenized-choreo-kits/` was never created, and the two `cp` commands failed as pure fallout.
+## Fix
 
-## What to do next (no plan needed, just run these)
+Pin all three services in `docker-compose.yml` to explicit, known-good tags that match Compact 0.23 / MidnightJS 4.1.x:
 
-Run each line **on its own**, do not paste them as a block:
+- `midnightntwrk/proof-server:4.0.0` (or keep `latest` — this one works)
+- `midnightntwrk/midnight-node:2.0.0-rc.4`
+- `midnightntwrk/indexer-standalone:4.3.3`
 
-```zsh
-compact update
-compact compile --version    # must print a compiler version
-compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits
-cp -r contracts/managed/tokenized-choreo-kits/keys public/keys
-cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir
-docker compose up -d
-docker compose ps
-```
+Update `README.md` to note that first `docker compose pull` may take a few minutes on the new tags.
 
-If `compact update` fails, paste that specific error and I'll diagnose.
+## Steps
 
-## Optional — do you want me to add a build shortcut?
+1. Edit `docker-compose.yml` — replace the three `image:` lines with pinned tags above.
+2. Add a short "Image tags" note in `README.md` explaining why they're pinned (upstream doesn't publish `:latest` for the node).
+3. You then re-run:
+   ```
+   docker compose pull
+   bun run compile
+   ```
 
-I can (in build mode) add a `package.json` script so this becomes a one-liner:
+## Notes
 
-```json
-"scripts": {
-  "midnight:compile": "compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits && cp -r contracts/managed/tokenized-choreo-kits/keys public/keys && cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir",
-  "midnight:up":      "docker compose up -d && docker compose ps",
-  "midnight:down":    "docker compose down"
-}
-```
-
-Then you'd just run `bun run midnight:compile && bun run midnight:up`.
-
-**Approve this plan if you want the `package.json` scripts added.** Otherwise, just run the commands above — nothing in the repo needs to change.
+- Your proof-server container is already healthy on `:6300`, so only node + indexer need to come up.
+- If `2.0.0-rc.4` node rejects the compiled contract (ledger version mismatch), fallback is `latest-main` (rolling dev tag) — I'll call that out in the README.

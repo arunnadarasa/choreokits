@@ -16,7 +16,7 @@
 
 services:
   proof-server:
-    image: midnightntwrk/proof-server:latest
+    image: midnightntwrk/proof-server:4.0.0
     container_name: midnight-proof-server
     command: midnight-proof-server -v
     ports:
@@ -24,7 +24,10 @@ services:
     restart: unless-stopped
 
   node:
-    image: midnightntwrk/midnight-node:latest
+    # Upstream does NOT publish `midnightntwrk/midnight-node:latest`.
+    # Pin to a known-good release compatible with Compact 0.23 / MidnightJS 4.1.x.
+    # If this tag ever gets yanked, fall back to `latest-main` (rolling dev tag).
+    image: midnightntwrk/midnight-node:2.0.0-rc.4
     container_name: midnight-node
     command:
       - "--dev"
@@ -41,7 +44,7 @@ services:
     restart: unless-stopped
 
   indexer:
-    image: midnightntwrk/indexer-standalone:latest
+    image: midnightntwrk/indexer-standalone:4.3.3
     container_name: midnight-indexer
     depends_on:
       - node

@@ -1,42 +1,28 @@
 ## Problem
 
-Deployment fails at `new Contract(...)` with:
+Deploy resolves ZK assets at `.../scripts/contracts/managed/...` instead of `.../contracts/managed/...`. `path.resolve(file, "..", "contracts", ...)` uses the file path itself as the base — the first `".."` just strips the filename, leaving `scripts/`. Needs a second `".."` to climb to project root.
 
-> first (witnesses) argument to Contract constructor does not contain a function-valued field named `localSecretKey`
+## Fix
 
-The compiled contract requires a `witnesses` object with a `localSecretKey` function, but `scripts/deploy-midnight.mjs` uses `CompiledContract.withVacantWitnesses`, which passes an empty witnesses object. Compact witness functions must return `[newPrivateState, value]`.
+In `scripts/deploy-midnight.mjs` lines 54–60, add one `".."`:
 
-## Fix (one file)
+```js
+const ZK_CONFIG_PATH = path.resolve(
+  new URL(import.meta.url).pathname,
+  "..",
+  "..",
+  "contracts",
+  "managed",
+  "tokenized-choreo-kits",
+);
+```
 
-Edit `scripts/deploy-midnight.mjs`:
-
-1. Drop the `CompiledContract.withVacantWitnesses` step.
-2. Provide an explicit witnesses object to `CompiledContract.make`:
-   ```js
-   const witnesses = {
-     localSecretKey: (ctx) => {
-       // Deploy-time secret: random 32 bytes; the browser has its own witness.
-       const sk = ctx?.privateState?.localSecretKey ?? crypto.getRandomValues(new Uint8Array(32));
-       return [{ ...(ctx?.privateState ?? {}), localSecretKey: sk }, sk];
-     },
-   };
-   const compiledContract = CompiledContract.make(
-     "TokenizedChoreoKitsContract",
-     Contract,
-     witnesses,
-   ).pipe(CompiledContract.withCompiledFileAssets(ZK_CONFIG_PATH));
-   ```
-   (If `CompiledContract.make` in this SDK version doesn't take witnesses positionally, use the equivalent `.pipe(CompiledContract.withWitnesses(witnesses))` — I'll pick the right one based on the installed types when implementing.)
-3. Set `initialPrivateState: { localSecretKey: crypto.getRandomValues(new Uint8Array(32)) }` so the deployer has a stable seed.
-
-The constructor doesn't invoke `localSecretKey`, so no proof cost changes — this only satisfies the Contract-class witness-shape check.
+The `.env` write at line 241 has the correct `..`, `..` pattern already.
 
 ## Verify
 
 ```bash
-docker compose down -v && bun run compile
+bun run compile
 ```
 
-Expect `Contract deployed at: 0200…`, `.env` gets `VITE_DEFAULT_CONTRACT`, then `bun dev` boots.
-
-No README changes needed.
+Expect `Contract deployed at: 0200…`.

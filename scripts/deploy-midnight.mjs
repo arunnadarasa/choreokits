@@ -54,10 +54,12 @@ const PROOF_SERVER_URL = process.env.VITE_PROOF_SERVER_URL ?? "http://localhost:
 const ZK_CONFIG_PATH = path.resolve(
   new URL(import.meta.url).pathname,
   "..",
+  "..",
   "contracts",
   "managed",
   "tokenized-choreo-kits",
 );
+
 
 async function checkContainerHealthy(name) {
   try {

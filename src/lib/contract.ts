@@ -47,14 +47,13 @@ export async function loadContractModule(): Promise<ContractModule | null> {
   if (contractModuleCache) return contractModuleCache;
   if (typeof window === "undefined") return null;
   try {
-    const url = new URL("/contract/index.js", window.location.origin).href;
-    // Hide the import from Vite's static analyzer — the file lives in /public
-    // and cannot be resolved by the bundler.
-    const dynamicImport = new Function("u", "return import(u)") as (u: string) => Promise<ContractModule>;
-    const mod = await dynamicImport(url);
-    contractModuleCache = mod;
-    return mod;
-  } catch {
+    const mod: any = await import(
+      /* @vite-ignore */ "../../contracts/managed/tokenized-choreo-kits/contract/index.cjs"
+    );
+    contractModuleCache = (mod.default ?? mod) as ContractModule;
+    return contractModuleCache;
+  } catch (err) {
+    console.error("Failed to load compiled contract module:", err);
     return null;
   }
 }

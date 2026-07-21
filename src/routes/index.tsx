@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@/components/ClientOnly";
 import { WalletConnectPanel } from "@/components/WalletConnectPanel";
@@ -73,6 +74,7 @@ function Header() {
 
 function Demo() {
   const [walletAddr, setWalletAddr] = useState<string | null>(null);
+  const [walletApi, setWalletApi] = useState<ConnectedAPI | null>(null);
   const [contractAddr, setContractAddr] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -87,6 +89,7 @@ function Demo() {
       <WalletConnectPanel
         expectedNetwork={(import.meta.env.VITE_NETWORK_ID as string) || "undeployed"}
         onConnected={setWalletAddr}
+        onApiReady={setWalletApi}
       />
       <DeployPanel
         walletConnected={!!walletAddr}
@@ -98,6 +101,7 @@ function Demo() {
       />
       <PublishKitForm
         walletConnected={!!walletAddr}
+        walletApi={walletApi}
         contractAddress={contractAddr}
         onPublished={() => setRefreshTick((t) => t + 1)}
       />

@@ -202,11 +202,19 @@ async function main() {
     "@midnight-ntwrk/midnight-js-protocol/compact-js"
   );
 
+  const deployerSecret = crypto.getRandomValues(new Uint8Array(32));
+  const witnesses = {
+    localSecretKey: (ctx) => {
+      const sk = ctx?.privateState?.localSecretKey ?? deployerSecret;
+      return [{ ...(ctx?.privateState ?? {}), localSecretKey: sk }, sk];
+    },
+  };
+
   const compiledContract = CompiledContract.make(
     "TokenizedChoreoKitsContract",
     Contract,
   ).pipe(
-    CompiledContract.withVacantWitnesses,
+    (self) => CompiledContract.withWitnesses(self, witnesses),
     CompiledContract.withCompiledFileAssets(ZK_CONFIG_PATH),
   );
 
@@ -214,8 +222,9 @@ async function main() {
   const deployed = await deployContract(providers, {
     compiledContract,
     privateStateId: "choreo-kits-deployer",
-    initialPrivateState: {},
+    initialPrivateState: { localSecretKey: deployerSecret },
   });
+
 
   const contractAddress = deployed.deployTxData.public.contractAddress;
   logger.info(`Contract deployed at: ${contractAddress}`);

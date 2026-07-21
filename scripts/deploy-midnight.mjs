@@ -14,6 +14,8 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { WebSocket } from "ws";
+import { firstValueFrom } from "rxjs";
+
 
 const execFileP = promisify(execFile);
 
@@ -106,6 +108,65 @@ async function waitForService(url, name, timeoutMs = 120_000, containerName) {
   throw new Error(`${name} at ${url} did not become ready within ${timeoutMs}ms`);
 }
 
+async function waitForBlockHeight(indexerUrl, minHeight, timeoutMs = 60_000) {
+  const start = Date.now();
+  logger.info(`Waiting for node to produce block height >= ${minHeight}...`);
+  let lastHeight = -1;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const resp = await fetch(indexerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "{ block { height } }" }),
+      });
+      const json = await resp.json();
+      const h = Number(json?.data?.block?.height ?? -1);
+      if (h !== lastHeight) {
+        logger.info(`  current tip height: ${h}`);
+        lastHeight = h;
+      }
+      if (h >= minHeight) {
+        logger.info(`Node is producing blocks (height ${h}).`);
+        return;
+      }
+    } catch {
+      // indexer not fully warm yet
+    }
+    await setTimeout(2_000);
+  }
+  throw new Error(`Node did not reach block height ${minHeight} within ${timeoutMs}ms`);
+}
+
+async function waitForWalletReady(wallet, timeoutMs = 90_000) {
+  const start = Date.now();
+  logger.info("Waiting for wallet to reach tip and see dust balance...");
+  let lastLog = "";
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const state = await firstValueFrom(wallet.state());
+      const synced = state?.syncProgress?.synced === true;
+      const balances = state?.balances ?? {};
+      const hasDust = Object.values(balances).some((v) => {
+        try { return BigInt(v) > 0n; } catch { return false; }
+      });
+      const line = `  synced=${synced} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
+      if (line !== lastLog) {
+        logger.info(line);
+        lastLog = line;
+      }
+      if (synced && hasDust) {
+        logger.info("Wallet is ready.");
+        return;
+      }
+    } catch (e) {
+      // state stream may not be primed yet
+    }
+    await setTimeout(2_000);
+  }
+  logger.warn(`Wallet did not fully sync within ${timeoutMs}ms; proceeding anyway (retry loop will catch TTL failures).`);
+}
+
+
 
 async function main() {
   if (NETWORK_ID !== "undeployed") {
@@ -130,6 +191,10 @@ async function main() {
   await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
   await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
 
+  // Wait until the node is actually producing blocks. Without this the wallet
+  // stamps ttlOneHour() against a stale tip and the tx is rejected with
+  // "1010: Invalid Transaction: Custom error: 171".
+  await waitForBlockHeight(INDEXER_URL, 2, 60_000);
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,
@@ -148,7 +213,7 @@ async function main() {
     .withDustOptions({
       ledgerParams: LedgerParameters.initialParameters(),
       additionalFeeOverhead: 1_000n,
-      feeBlocksMargin: 5,
+      feeBlocksMargin: 15,
     })
     .buildWithoutStarting();
 
@@ -159,10 +224,10 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
-  // Give the wallet a moment to catch up with genesis blocks so its dust UTXO
-  // is visible before we try to balance the deploy tx.
-  logger.info("Waiting for genesis dust to sync (up to 60s)...");
-  await setTimeout(15_000);
+  // Wait until the wallet reports it has synced to the tip AND sees a non-zero
+  // dust balance. Fixed 15s sleeps race with WS reconnects on a cold chain.
+  await waitForWalletReady(wallet, 90_000);
+
 
 
   const coinPublicKey = zswapSecretKeys.coinPublicKey;
@@ -244,14 +309,16 @@ async function main() {
       break;
     } catch (e) {
       const msg = String(e?.message ?? e);
-      if (msg.includes("Insufficient Funds") && attempt < maxAttempts) {
-        logger.warn(`Dust not yet synced (attempt ${attempt}/${maxAttempts}); retrying in 10s...`);
+      const retryable = /Insufficient Funds|Custom error: 171|Invalid Transaction|Transaction submission error/i.test(msg);
+      if (retryable && attempt < maxAttempts) {
+        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); retrying in 10s...`);
         await setTimeout(10_000);
         continue;
       }
       throw e;
     }
   }
+
 
 
 

@@ -447,7 +447,9 @@ Never accept a seed phrase in chat. Ship a local script that reads `MIDNIGHT_WAL
 4. **Bake artefact copy into `bun run compile`.** `compact compile` → copy `keys/`, `zkir/`, `contract/` into `public/contract/` in one script; the browser silently drifts otherwise.
 5. **Pin every Docker tag.** `latest` doesn't exist for `midnight-node`, and the partner-chain 2.x tags don't run standalone. `0.22.5` / `4.0.2` / `8.0.3` is the current known-good triple.
 6. **Fail fast on a crash-looping node** — probe `docker inspect` health before the 15 s sync wait, or you'll spend 95 s per failed attempt discovering the container never came up.
-7. **On TanStack Start, disable Nitro for Midnight routes.** Don't try to make workerd SSR happy with WASM + TLA + Buffer — it won't be.
+7. **On TanStack Start, keep Nitro ENABLED and stub Midnight during the SSR pass.** The instinct to `nitro: false` is a trap — it swaps a fixable build error for an unfixable runtime one on the published Worker. Route stays `ssr: false`, `midnightSsrStub()` handles the bundler crawl, `vite-plugin-top-level-await` is client-only.
+8. **Ban `browser-level` from the browser bundle on day one.** Ship a `localStorage`-backed `PrivateStateProvider` from the first commit. Every Node-ecosystem storage lib (`level`, `classic-level`, `browser-level`, `abstract-level`) will eventually break production Rollup's CJS/ESM interop — pick pure JS or `IndexedDB` from the start.
+9. **Test the production build + Publish → Update on day one, not the night before.** Preview runs on Vite dev; published runs on workerd/Nitro/Rollup. Every failure mode in the "Publishing to Cloudflare Workers" section is invisible in preview.
 
 ## Anti-patterns
 

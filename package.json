@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "midnight:compile": "compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits && rm -rf public/keys public/zkir && cp -r contracts/managed/tokenized-choreo-kits/keys public/keys && cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir",
+    "midnight:compile": "compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits && rm -rf public/keys public/zkir public/contract && cp -r contracts/managed/tokenized-choreo-kits/keys public/keys && cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir && cp -r contracts/managed/tokenized-choreo-kits/contract public/contract",
     "midnight:up": "docker compose up -d && docker compose ps",
     "midnight:down": "docker compose down",
     "midnight:logs": "docker compose logs -f",

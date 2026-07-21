@@ -17,6 +17,14 @@ export default defineConfig({
   vite: {
     plugins: [wasm(), topLevelAwait()],
     build: { target: "esnext" },
+    resolve: {
+      conditions: ["browser", "import", "default"],
+    },
+    ssr: {
+      resolve: {
+        conditions: ["browser", "node", "import", "default"],
+      },
+    },
     optimizeDeps: {
       esbuildOptions: { target: "esnext", supported: { "top-level-await": true } },
       include: ["@midnight-ntwrk/compact-runtime"],

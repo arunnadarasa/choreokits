@@ -2,7 +2,6 @@ import { Buffer } from "buffer";
 import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { createCircuitCallTxInterface } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
-import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type {
   CoinPublicKey,
@@ -23,8 +22,8 @@ import type {
 import { createProofProvider } from "@midnight-ntwrk/midnight-js-types";
 import { parseCoinPublicKeyToHex, parseEncPublicKeyToHex } from "@midnight-ntwrk/midnight-js-utils";
 
-const LOCAL_PASSWORD = "Choreo-Kits-Local-2026!";
 const PRIVATE_STATE_ID = "choreo-kits-author";
+const PRIVATE_STATE_PREFIX = "choreo-kits:private-state:v1";
 
 export type KitPayload = {
   title: string;
@@ -142,14 +141,125 @@ class LaceMidnightProvider implements MidnightProvider {
   }
 }
 
-async function createPrivateStateProvider(accountId: string): Promise<PrivateStateProvider> {
-  const { BrowserLevel } = await import("browser-level");
-  return levelPrivateStateProvider({
-    privateStateStoreName: "choreo-kits-local",
-    privateStoragePasswordProvider: () => LOCAL_PASSWORD,
-    accountId,
-    levelFactory: (dbName: string) => new BrowserLevel(dbName) as unknown as any,
-  });
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+function encodeForStorage(value: unknown): JsonValue {
+  if (value instanceof Uint8Array) {
+    return { __type: "Uint8Array", data: Array.from(value) };
+  }
+  if (Array.isArray(value)) {
+    return value.map(encodeForStorage);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+        key,
+        encodeForStorage(nested),
+      ]),
+    );
+  }
+  return value as JsonValue;
+}
+
+function decodeFromStorage(value: JsonValue): unknown {
+  if (Array.isArray(value)) {
+    return value.map(decodeFromStorage);
+  }
+  if (value && typeof value === "object") {
+    const record = value as { [key: string]: JsonValue };
+    if (record.__type === "Uint8Array" && Array.isArray(record.data)) {
+      return new Uint8Array(record.data.map((n) => Number(n)));
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([key, nested]) => [key, decodeFromStorage(nested)]),
+    );
+  }
+  return value;
+}
+
+function safeGetLocalStorage(): Storage | null {
+  return typeof window === "undefined" ? null : window.localStorage;
+}
+
+function createPrivateStateProvider(accountId: string): PrivateStateProvider<string, unknown> {
+  let contractAddress: string | null = null;
+  const root = `${PRIVATE_STATE_PREFIX}:${accountId}`;
+
+  const makePrivateKey = (privateStateId: string) => {
+    if (!contractAddress) {
+      throw new Error("Contract address not set. Call setContractAddress() first.");
+    }
+    return `${root}:contracts:${contractAddress}:states:${privateStateId}`;
+  };
+  const makeSigningKey = (address: string) => `${root}:signing:${address}`;
+
+  const read = <T,>(key: string): T | null => {
+    const storage = safeGetLocalStorage();
+    if (!storage) return null;
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    return decodeFromStorage(JSON.parse(raw) as JsonValue) as T;
+  };
+
+  const write = (key: string, value: unknown) => {
+    const storage = safeGetLocalStorage();
+    if (!storage) return;
+    storage.setItem(key, JSON.stringify(encodeForStorage(value)));
+  };
+
+  const removeWhere = (predicate: (key: string) => boolean) => {
+    const storage = safeGetLocalStorage();
+    if (!storage) return;
+    const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i)).filter(
+      (key): key is string => typeof key === "string" && predicate(key),
+    );
+    keys.forEach((key) => storage.removeItem(key));
+  };
+
+  return {
+    setContractAddress(address) {
+      contractAddress = address;
+    },
+    async get(privateStateId) {
+      return read(makePrivateKey(privateStateId));
+    },
+    async set(privateStateId, state) {
+      write(makePrivateKey(privateStateId), state);
+    },
+    async remove(privateStateId) {
+      safeGetLocalStorage()?.removeItem(makePrivateKey(privateStateId));
+    },
+    async clear() {
+      if (!contractAddress) {
+        throw new Error("Contract address not set. Call setContractAddress() first.");
+      }
+      removeWhere((key) => key.startsWith(`${root}:contracts:${contractAddress}:states:`));
+    },
+    async getSigningKey(address) {
+      return read(makeSigningKey(address as string));
+    },
+    async setSigningKey(address, signingKey) {
+      write(makeSigningKey(address as string), signingKey);
+    },
+    async removeSigningKey(address) {
+      safeGetLocalStorage()?.removeItem(makeSigningKey(address as string));
+    },
+    async clearSigningKeys() {
+      removeWhere((key) => key.startsWith(`${root}:signing:`));
+    },
+    async exportPrivateStates() {
+      throw new Error("Private-state export is not available in this demo build.");
+    },
+    async importPrivateStates() {
+      return { imported: 0, skipped: 0, overwritten: 0 } as any;
+    },
+    async exportSigningKeys() {
+      throw new Error("Signing-key export is not available in this demo build.");
+    },
+    async importSigningKeys() {
+      return { imported: 0, skipped: 0, overwritten: 0 } as any;
+    },
+  };
 }
 
 async function ensurePrivateState(
@@ -182,7 +292,7 @@ export async function publishKit(
   const publicDataProvider: PublicDataProvider = indexerPublicDataProvider(cfg.indexerUri, cfg.indexerWsUri);
 
   const { coinPublicKey, encryptionPublicKey } = await getWalletKeys(api, networkId);
-  const privateStateProvider = await createPrivateStateProvider(coinPublicKey);
+  const privateStateProvider = createPrivateStateProvider(coinPublicKey);
   const walletProvider: WalletProvider = new LaceWalletProvider(api, coinPublicKey, encryptionPublicKey);
   const midnightProvider: MidnightProvider = new LaceMidnightProvider(api);
 

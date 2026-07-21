@@ -1,44 +1,30 @@
-**Goal**
-Fold this turn's production-deploy debugging into `.agents/skills/lovable-midnight/SKILL.md` so the next agent skips the multi-hour SSR/hydration loop we just walked through.
+## Diagnosis
 
-**New material to add**
+Deploy tx is rejected by the node with `1010: Invalid Transaction: Custom error: 171`. That's a runtime-level rejection (not a proving or balancing failure) — the tx was built, proved, and balanced fine, then the node refused it at the mempool.
 
-1. **New "Publishing to Cloudflare Workers (TanStack Start)" section**, above the existing frontend section, capturing the hard-won rules:
-   - Keep `nitro` **enabled** (don't set `nitro: false`) — disabling it splits the SSR bundle into chunks the Worker can't resolve (`No such module "assets/react"`).
-   - Restrict `vite-plugin-top-level-await` to the **client environment only** via `applyToEnvironment(env => env.name === "client")`. Running it in the SSR bundle causes `Identifier '__tla' has already been declared` in the workerd build.
-   - Add a `midnightSsrStub()` Vite plugin (`enforce: "pre"`) that, when `options.ssr` is true:
-     - redirects every `@midnight-ntwrk/*` import to an empty stub module, AND
-     - resolves the id normally then swaps the absolute path of `src/lib/contract.ts` for `src/lib/contract.ssr-stub.ts` (aliases, relative imports, and `@/` all funnel through the same absolute path).
-   - Home route must be `ssr: false`, but that alone is **not enough** — the SSR bundler still crawls the module graph, so both stubs above are required or the build dies with `MISSING_EXPORT "ContractState"` / `createCircuitCallTxInterface`.
-   - Never keep a top-level runtime `import` from `@midnight-ntwrk/*` in a route file. Type-only imports are fine (erased), but even those are risky — prefer defining the ConnectedAPI shape locally or importing types from a client-only module.
+On Midnight's standalone node, `Custom error: 171` in practice means the transaction's TTL window doesn't line up with the node's current block time. Two things line up with that:
 
-2. **New failure-modes table rows** (extend the existing ranked table):
-   | Symptom | Cause | Fix |
-   | --- | --- | --- |
-   | Published `/` shows generic "This page didn't load", preview works | Client-hydration crash hidden by root ErrorBoundary | Temporarily render `error.message` + `error.stack` in the root `errorComponent` to see the real cause on mobile |
-   | Prod runtime: `Class extends value undefined is not a constructor or null` in `browser-level-*.js` | `levelPrivateStateProvider` → `browser-level` → `abstract-level` CJS/ESM interop breaks in Rollup production bundle | Do NOT ship `levelPrivateStateProvider` to the browser. Write a tiny `localStorage`-backed `PrivateStateProvider<string, unknown>` (encode `Uint8Array` as `{__type:"Uint8Array",data:[...]}`) — see reference implementation in `src/lib/contract.ts` |
-   | Build error `MISSING_EXPORT "X" is not exported by "src/lib/midnight-ssr-stub.ts"` | Real client module (e.g. `src/lib/contract.ts`) was pulled into SSR bundle and hit the stub | Extend the SSR stub plugin to also swap the client module for a dedicated `.ssr-stub.ts` by absolute path |
-   | Prod SSR 500 `No such module "assets/react"` from `assets/server-*.js` | `nitro: false` produced multi-chunk SSR output workerd can't resolve | Re-enable `nitro`, keep the Midnight SSR stubs |
-   | Prod SSR crash `Identifier '__tla' has already been declared` | `vite-plugin-top-level-await` applied to the SSR bundle | Wrap the plugin with `applyToEnvironment(env => env.name === "client")` |
+1. The node was just started this run (`Up 6 seconds` when the deploy began), so its wall clock / block time is still catching up to genesis timestamps.
+2. We only wait 15s after `wallet.start()` before deploying. The wallet sync log shows the WS actually disconnected/reconnected twice during that window, so the wallet's view of "current tip" is stale — it stamps `ttlOneHour()` relative to an old block, and by the time the node sees the tx the TTL is already invalid.
 
-3. **New "Private state provider" subsection** under the SDK guidance:
-   - Reference implementation: a `localStorage`-backed provider keyed by `choreo-kits:private-state:v1:<coinPubKey>:contracts:<addr>:states:<id>` with `Uint8Array` JSON encoding.
-   - Rationale: avoids the entire `level` dependency chain, which is the #1 source of production hydration crashes.
-   - Node deploy script can still use `levelPrivateStateProvider` (Node CJS interop is fine) — the ban is browser-only.
+It "worked before" because on earlier runs the containers had been up longer, so tip time and wallet time agreed. Nothing in `contract.compact`, the deploy script's crypto, or the Docker images actually changed.
 
-4. **New "Debugging a black/error published page on mobile" playbook**:
-   1. Temporarily render `error.message` + `error.stack` in the root TanStack `errorComponent`.
-   2. Also update `src/server.ts` to catch SSR throws and inline the stack into the fallback HTML.
-   3. `Publish → Update`, reload on device, read the real error.
-   4. Revert the verbose error UI once fixed.
+## Fix plan
 
-5. **Update the retrospective** with:
-   - "Assume every Node-ecosystem storage lib (`level`, `classic-level`, `browser-level`) will break production Rollup. Pick pure-JS/`localStorage`/`IndexedDB` from day one."
-   - "Enable production build + published deploy early — preview passes hide Nitro/workerd/CJS interop bugs."
+Edit only `scripts/deploy-midnight.mjs`:
 
-**Skill file layout change**
-Everything lands in the existing `.agents/skills/lovable-midnight/SKILL.md` — no new reference files. The file stays under the ~50KB guidance.
+1. **Wait for the node to produce blocks before touching the wallet.** After `waitForService` for the indexer, poll the indexer's GraphQL for `block { height }` until height ≥ 2 (or timeout 60s). This guarantees the chain is actually advancing, not just that the HTTP port is open.
 
-**Verify**
-- After edits: `code--view` the file to confirm section ordering and no duplicate headings.
-- Run `skills--apply_draft` on `.agents/skills/lovable-midnight` so the updates become active.
+2. **Wait for wallet sync to reach the tip, not a fixed 15s.** Replace the `await setTimeout(15_000)` with a loop that reads `wallet.state()` (RxJS observable → take 1) and waits until `syncProgress.synced === true` AND a non-zero dust balance is visible, with a 90s cap. Log progress each iteration.
+
+3. **Retry on `Custom error: 171` the same way we retry on `Insufficient Funds`.** In the existing 8-attempt `deployContract` loop, also catch messages containing `Custom error: 171`, `Invalid Transaction`, or `Transaction submission error`, sleep 10s, and retry — each retry rebuilds the tx against a fresher tip so the TTL becomes valid.
+
+4. **Shrink the TTL margin.** `ttlOneHour()` is fine, but also bump `feeBlocksMargin` from 5 → 15 in the wallet builder so balancing accounts for more slippage while the node is still warming.
+
+No frontend, contract, Docker, or Vite changes. After this, `bun run compile` should get past deployment on a cold `docker compose up`.
+
+## Technical detail
+
+- Block-height poll: `POST http://localhost:8088/api/v4/graphql` with `{ query: "{ block { height } }" }`, parse `data.block.height`.
+- Wallet-state read: `import { firstValueFrom } from "rxjs"; const s = await firstValueFrom(wallet.state());` then check `s.syncProgress?.synced` and `s.balances`.
+- Retry classifier: `if (/Custom error: 171|Invalid Transaction|Transaction submission error|Insufficient Funds/.test(msg) && attempt < maxAttempts)`.

@@ -58,10 +58,34 @@ const ZK_CONFIG_PATH = path.resolve(
   "tokenized-choreo-kits",
 );
 
-async function waitForService(url, name, timeoutMs = 120_000) {
+async function checkContainerHealthy(name) {
+  try {
+    const { stdout } = await execFileP("docker", [
+      "inspect",
+      name,
+      "--format",
+      "{{.State.Status}}",
+    ]);
+    const status = stdout.trim();
+    if (status === "restarting" || status === "exited" || status === "dead") {
+      throw new Error(
+        `Container '${name}' is ${status}. Run:\n\n  docker compose logs --tail=80 ${name.replace(
+          /^midnight-/,
+          "",
+        )}\n\nto see the crash reason.`,
+      );
+    }
+  } catch (e) {
+    if (e.message?.startsWith("Container ")) throw e;
+    // docker not available or container missing — let waitForService handle it
+  }
+}
+
+async function waitForService(url, name, timeoutMs = 120_000, containerName) {
   const start = Date.now();
   logger.info(`Waiting for ${name} at ${url}...`);
   while (Date.now() - start < timeoutMs) {
+    if (containerName) await checkContainerHealthy(containerName);
     try {
       const resp = await fetch(url, { method: "POST", body: JSON.stringify({ query: "{ __typename }" }) });
       if (resp.status < 500) {
@@ -75,6 +99,7 @@ async function waitForService(url, name, timeoutMs = 120_000) {
   }
   throw new Error(`${name} at ${url} did not become ready within ${timeoutMs}ms`);
 }
+
 
 async function main() {
   if (NETWORK_ID !== "undeployed") {

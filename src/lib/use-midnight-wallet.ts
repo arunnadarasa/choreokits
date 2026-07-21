@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { ConnectedAPI, InitialAPI } from "@midnight-ntwrk/dapp-connector-api";
 
 export type WalletStatus =
   | "idle"
@@ -8,15 +9,8 @@ export type WalletStatus =
   | "connected"
   | "error";
 
-type Connector = {
-  apiVersion: string;
-  name?: string;
-  connect: (networkId: string) => Promise<ConnectedApi>;
-};
-
-type ConnectedApi = {
-  getShieldedAddresses?: () => Promise<string[] | Record<string, string>>;
-  getUnshieldedAddress?: () => Promise<string>;
+type Connector = Omit<InitialAPI, "connect"> & {
+  connect: (networkId: string) => Promise<ConnectedAPI>;
 };
 
 function pickConnector(): Connector | null {
@@ -44,6 +38,7 @@ function inferNetwork(addr: string): string {
 export function useMidnightWallet() {
   const [status, setStatus] = useState<WalletStatus>("idle");
   const [address, setAddress] = useState<string | null>(null);
+  const [api, setApi] = useState<ConnectedAPI | null>(null);
   const [apiVersion, setApiVersion] = useState<string | null>(null);
   const [network, setNetwork] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +76,12 @@ export function useMidnightWallet() {
       if (!c) throw new Error("No Midnight wallet detected.");
       const preferred = (import.meta.env.VITE_NETWORK_ID as string) || "undeployed";
       const candidates = Array.from(new Set([preferred, "undeployed", "preview", "preprod"]));
-      let api: ConnectedApi | null = null;
+      let connectedApi: ConnectedAPI | null = null;
       let used: string | null = null;
       let mismatch: unknown = null;
       for (const n of candidates) {
         try {
-          api = await c.connect(n);
+          connectedApi = await c.connect(n);
           used = n;
           break;
         } catch (e) {
@@ -98,7 +93,7 @@ export function useMidnightWallet() {
           throw e;
         }
       }
-      if (!api || !used) {
+      if (!connectedApi || !used) {
         throw new Error(
           mismatch
             ? "Lace is on a different network. Switch Lace to your local Undeployed node and retry."
@@ -106,24 +101,25 @@ export function useMidnightWallet() {
         );
       }
       let addr: string | null = null;
-      if (typeof api.getShieldedAddresses === "function") {
+      if (typeof connectedApi.getShieldedAddresses === "function") {
         try {
-          const s = await api.getShieldedAddresses();
+          const s = await connectedApi.getShieldedAddresses();
           if (Array.isArray(s)) addr = s[0] ?? null;
           else if (s && typeof s === "object") addr = Object.values(s)[0] ?? null;
         } catch {
           // ignore
         }
       }
-      if (!addr && typeof api.getUnshieldedAddress === "function") {
+      if (!addr && typeof connectedApi.getUnshieldedAddress === "function") {
         try {
-          addr = await api.getUnshieldedAddress();
+          addr = await connectedApi.getUnshieldedAddress();
         } catch {
           // ignore
         }
       }
       if (!addr) throw new Error("Connected but couldn't read an address. Update Lace.");
       setAddress(addr);
+      setApi(connectedApi);
       setNetwork(used ?? inferNetwork(addr));
       setApiVersion(c.apiVersion);
       setStatus("connected");
@@ -136,12 +132,14 @@ export function useMidnightWallet() {
   return {
     status,
     address,
+    api,
     apiVersion,
     network,
     error,
     connect,
     disconnect: () => {
       setAddress(null);
+      setApi(null);
       setNetwork(null);
       setStatus("ready");
       setError(null);

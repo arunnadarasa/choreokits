@@ -68,22 +68,35 @@ class FetchZKConfigProvider implements ZKConfigProvider<string> {
     return new Uint8Array(await r.arrayBuffer());
   }
 
-  async getZKIR(circuitId: string): Promise<Uint8Array> {
+  async getZKIR(circuitId: string): Promise<any> {
     return this.fetchBytes(`/zkir/${circuitId}.bzkir`);
   }
 
-  async getProverKey(circuitId: string): Promise<Uint8Array> {
+  async getProverKey(circuitId: string): Promise<any> {
     return this.fetchBytes(`/keys/${circuitId}.prover`);
   }
 
-  async getVerifierKey(circuitId: string): Promise<Uint8Array> {
+  async getVerifierKey(circuitId: string): Promise<any> {
     return this.fetchBytes(`/keys/${circuitId}.verifier`);
   }
 
-  async getVerifierKeys(circuitIds: string[]): Promise<[string, Uint8Array][]> {
+  async getVerifierKeys(circuitIds: string[]): Promise<any> {
     return Promise.all(
-      circuitIds.map(async (id) => [id, await this.getVerifierKey(id)] as [string, Uint8Array]),
+      circuitIds.map(async (id) => [id, await this.getVerifierKey(id)] as [string, any]),
     );
+  }
+
+  async get(circuitId: string): Promise<any> {
+    return {
+      circuitId,
+      zkir: await this.getZKIR(circuitId),
+      proverKey: await this.getProverKey(circuitId),
+      verifierKey: await this.getVerifierKey(circuitId),
+    };
+  }
+
+  asKeyMaterialProvider(): any {
+    return this;
   }
 }
 

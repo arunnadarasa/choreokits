@@ -1,29 +1,30 @@
-## Diagnosis
+**Goal**
+Restore the published app so `/` loads like preview, while keeping Midnight SDK/WASM strictly client-side.
 
-Published SSR now returns 200 — the `__tla` bug is gone. The mobile "This page didn't load" screen is our React `errorComponent` catching a **client-side** crash during the Midnight contract module boot:
+**What I verified**
+- Published `/` currently returns the app’s root error UI, not the full demo page.
+- The most recent production worker requests are HTTP 200, which means the server is responding but TanStack is rendering its error boundary.
+- The older production crash was `Identifier '__tla' has already been declared`; current config already limits the top-level-await plugin to the client build.
+- The home route is `ssr: false`, but it still has a top-level type import from `@midnight-ntwrk/dapp-connector-api` and lazy components may still pull Midnight modules through the route graph.
 
-```
-TypeError: Class extends value undefined is not a constructor or null
-  at browser-level-BQ7fVMvx.js
-  at contract-BNVWKR6u.js
-```
+**Plan**
+1. **Expose the current route error in production safely**
+   - Temporarily make the root error boundary show the actual error message/stack in the published page, so the next failure is visible immediately on mobile instead of only showing “This page didn’t load”.
+   - Keep the fallback simple and removable.
 
-`browser-level` (pulled in transitively by `@midnight-ntwrk/midnight-js-level-private-state-provider`) extends `AbstractLevel` from `abstract-level`. In production Rollup output the base class resolves to `undefined` — a classic CJS/ESM interop failure that dev (esbuild) hides. Preview works because preview serves the dev build.
+2. **Harden the route against SSR/package graph leakage**
+   - Change `src/routes/index.tsx` so Midnight wallet API types are type-only/local and do not require a top-level Midnight package import in the route module.
+   - Ensure only hydrated client/lazy components import Midnight SDK packages.
 
-## Plan
+3. **Fix the likely production runtime mismatch**
+   - If the visible error confirms a `browser-level` / `abstract-level` / IndexedDB/private-state provider issue, replace the current `levelPrivateStateProvider + BrowserLevel` production path with an in-browser private state provider backed by `localStorage` or IndexedDB-lite behavior, avoiding fragile CJS/Level interop in published builds.
+   - Keep the witness secret local to the browser only.
 
-1. **Force correct CJS/ESM interop for the `level` stack** in `vite.config.ts`:
-   - `optimizeDeps.include`: `abstract-level`, `browser-level`, `level-transcoder`, `module-error`, `catering`, `queue-microtask`, `maybe-combine-errors`.
-   - `build.commonjsOptions.transformMixedEsModules: true` and `defaultIsModuleExports: 'auto'`.
-   - `ssr.noExternal` already covers Midnight — extend to include the level packages so they aren't left as bare externals.
+4. **Keep Midnight stubbing clean for server builds**
+   - Keep the Vite SSR stubs for `@midnight-ntwrk/*` and `src/lib/contract.ts`.
+   - Avoid adding Nitro-disabling changes because the published worker needs the bundled server output.
 
-2. **Verify** by running a production build locally (`bun run build`) and grepping the emitted `browser-level-*.js` chunk to confirm `AbstractLevel` is resolved (not `undefined`). Then publish and reload on the phone.
-
-3. **Fallback if step 1 doesn't stick** (documented, only executed if the rebuild still throws): swap the persistent-state provider for the in-memory one in `src/lib/contract.ts` — the demo doesn't need cross-session state, and this removes the entire `level` dependency from the client bundle.
-
-### Files touched
-
-- `vite.config.ts` — add `optimizeDeps.include`, `build.commonjsOptions`, extend `ssr.noExternal`.
-- (Fallback only) `src/lib/contract.ts` — switch to `inMemoryPrivateStateProvider`.
-
-No UI, no contract, no deploy-script changes.
+5. **Verify**
+   - Fetch the published URL after implementation to confirm it no longer renders the error page.
+   - Check production logs for any new stack trace.
+   - If publishing is needed, prompt you to hit **Publish / Update** so the live site receives the fix.

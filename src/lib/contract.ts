@@ -211,7 +211,7 @@ function createPrivateStateProvider(accountId: string): PrivateStateProvider<str
     const storage = safeGetLocalStorage();
     if (!storage) return;
     const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i)).filter(
-      (key): key is string => Boolean(key) && predicate(key),
+      (key): key is string => typeof key === "string" && predicate(key),
     );
     keys.forEach((key) => storage.removeItem(key));
   };

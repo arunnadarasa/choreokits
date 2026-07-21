@@ -111,25 +111,26 @@ docker compose down -v                 # stop + wipe the chain data volume
 
 ### Image tags
 
-Upstream does **not** publish `midnightntwrk/midnight-node:latest`. `docker-compose.yml`
-pins known-good tags matching Compact 0.23 / MidnightJS 4.1.x:
+`docker-compose.yml` mirrors the official
+[`midnightntwrk/midnight-local-dev` `standalone.yml`](https://github.com/midnightntwrk/midnight-local-dev/blob/main/standalone.yml),
+pinned to the same tags:
 
-- `proof-server:latest` (upstream publishes this one; safe to use)
-- `midnight-node:2.0.0-rc.4`
-- `indexer-standalone:4.3.3`
+- `midnightntwrk/proof-server:8.0.3`
+- `midnightntwrk/midnight-node:0.22.5` — the standalone `--dev` build
+- `midnightntwrk/indexer-standalone:4.0.2`
 
-If the node tag ever 404s, swap it for `latest-main` (rolling dev tag).
+Do **not** bump `midnight-node` to `2.x` — those are Partner Chain builds
+that require Cardano `db-sync` (or a `mock_registrations_file`) and will
+crash-loop on a standalone stack.
 
 ### Troubleshooting
 
-- **`midnight-node` restarts / `db_sync_postgres_connection_string must be defined`** — `2.0.0-rc.4` is a Partner Chain build. `docker-compose.yml` already sets `USE_MAIN_CHAIN_FOLLOWER_MOCK=true` and `APP__MAIN_CHAIN_FOLLOWER_MOCK__ENABLED=true` to keep the standalone chain self-contained (no Cardano, no Postgres). If you edited compose and lost those, add them back.
-- **`indexer did not become ready within 120000ms`** — the deploy script now inspects `midnight-node` and fails fast if it's `restarting` or `exited`. Run `docker compose logs --tail=80 node` to see the crash reason, fix compose, then `docker compose down -v && bun run compile`.
-- **Stale chain state after a compose change** — always `docker compose down -v` (wipes the volume) before re-running `bun run compile`.
-
-
+- **`indexer did not become ready` / `Container 'midnight-node' is exited`** — the deploy script inspects `midnight-node` and fails fast on `restarting` / `exited`. Run `docker compose logs --tail=80 node` to see the crash reason, then `docker compose down -v && docker compose pull && bun run compile`.
+- **Stale chain state after a compose or image-tag change** — always `docker compose down -v` (wipes the volume) before re-running `bun run compile`.
 
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.
 The genesis wallet is pre-funded with unlimited tDUST — no faucet.
+
 
 ## Run the app
 
@@ -149,14 +150,15 @@ Copy `.env.example` to `.env`:
 
 ```
 VITE_NETWORK_ID=undeployed
-VITE_INDEXER_URL=http://localhost:8088/api/v3/graphql
-VITE_INDEXER_WS_URL=ws://localhost:8088/api/v3/graphql/ws
+VITE_INDEXER_URL=http://localhost:8088/api/v4/graphql
+VITE_INDEXER_WS_URL=ws://localhost:8088/api/v4/graphql/ws
 VITE_PROOF_SERVER_URL=http://localhost:6300
 VITE_NODE_WS=ws://localhost:9944
 VITE_DEFAULT_CONTRACT=  # paste hex address after deploy
 ```
 
-> The local Indexer uses `/api/v3/graphql` — not v4. Preview/preprod hosted
+> The local standalone Indexer serves `/api/v4/graphql` (matches hosted preview/preprod).
+
 > indexers use v4.
 
 ## Explicit non-goals (5-credit scope)

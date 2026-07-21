@@ -1,0 +1,56 @@
+# Local Midnight standalone stack — Docker Desktop only.
+#
+# Brings up:
+#   - proof-server   :6300  (generates ZK proofs for tx submission)
+#   - node           :9944  (single-node dev chain, unlimited tDUST genesis wallet)
+#   - indexer        :8088  (GraphQL over the node — /api/v3/graphql)
+#
+# Ports match .env.example. Point Lace at ws://localhost:9944.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose ps
+#   docker compose logs -f proof-server
+#   docker compose down          # stop
+#   docker compose down -v       # stop + wipe chain data
+
+services:
+  proof-server:
+    image: midnightntwrk/proof-server:latest
+    container_name: midnight-proof-server
+    command: midnight-proof-server -v
+    ports:
+      - "6300:6300"
+    restart: unless-stopped
+
+  node:
+    image: midnightntwrk/midnight-node:latest
+    container_name: midnight-node
+    command:
+      - "--dev"
+      - "--rpc-external"
+      - "--ws-external"
+      - "--rpc-cors=all"
+      - "--rpc-methods=unsafe"
+      - "--base-path=/data"
+    ports:
+      - "9944:9944"
+      - "9933:9933"
+    volumes:
+      - midnight-node-data:/data
+    restart: unless-stopped
+
+  indexer:
+    image: midnightntwrk/indexer-standalone:latest
+    container_name: midnight-indexer
+    depends_on:
+      - node
+    environment:
+      APP__INFRA__NODE__URL: "ws://node:9944"
+      RUST_LOG: "info"
+    ports:
+      - "8088:8088"
+    restart: unless-stopped
+
+volumes:
+  midnight-node-data:

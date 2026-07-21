@@ -56,7 +56,13 @@ export default defineConfig({
   },
   vite: {
     plugins: [midnightSsrStub(), wasm(), clientTopLevelAwait()],
-    build: { target: "esnext" },
+    build: {
+      target: "esnext",
+      commonjsOptions: {
+        transformMixedEsModules: true,
+        defaultIsModuleExports: "auto",
+      },
+    },
     resolve: {
       conditions: ["browser", "import", "default"],
     },
@@ -67,7 +73,16 @@ export default defineConfig({
     },
     optimizeDeps: {
       esbuildOptions: { target: "esnext", supported: { "top-level-await": true } },
-      include: ["@midnight-ntwrk/compact-runtime"],
+      include: [
+        "@midnight-ntwrk/compact-runtime",
+        "abstract-level",
+        "browser-level",
+        "level-transcoder",
+        "module-error",
+        "catering",
+        "queue-microtask",
+        "maybe-combine-errors",
+      ],
       exclude: [
         "@midnight-ntwrk/onchain-runtime-v3",
         "@midnight-ntwrk/onchain-runtime-v3/midnight_onchain_runtime_wasm_bg.wasm",

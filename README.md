@@ -159,8 +159,6 @@ VITE_DEFAULT_CONTRACT=  # paste hex address after deploy
 
 > The local standalone Indexer serves `/api/v4/graphql` (matches hosted preview/preprod).
 
-> indexers use v4.
-
 ## Explicit non-goals (5-credit scope)
 
 - No IPFS/Pinata — kit content is inline JSON.

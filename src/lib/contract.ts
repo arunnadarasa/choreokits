@@ -207,8 +207,8 @@ export async function publishKit(
   };
 
   const compiledContract = CompiledContract.withWitnesses(
-    CompiledContract.make("TokenizedChoreoKitsContract", Contract),
-    witnesses,
+    CompiledContract.make("TokenizedChoreoKitsContract", Contract as any),
+    witnesses as any,
   );
 
   const providers = {
@@ -222,7 +222,7 @@ export async function publishKit(
 
   const circuitCall = createCircuitCallTxInterface(
     providers,
-    compiledContract,
+    compiledContract as any,
     contractAddress,
     PRIVATE_STATE_ID,
   );

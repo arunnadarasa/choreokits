@@ -22,7 +22,6 @@ import type {
 } from "@midnight-ntwrk/midnight-js-types";
 import { createProofProvider } from "@midnight-ntwrk/midnight-js-types";
 import { parseCoinPublicKeyToHex, parseEncPublicKeyToHex } from "@midnight-ntwrk/midnight-js-utils";
-import { BrowserLevel } from "browser-level";
 
 const LOCAL_PASSWORD = "Choreo-Kits-Local-2026!";
 const PRIVATE_STATE_ID = "choreo-kits-author";
@@ -130,7 +129,8 @@ class LaceMidnightProvider implements MidnightProvider {
   }
 }
 
-function createPrivateStateProvider(accountId: string): PrivateStateProvider {
+async function createPrivateStateProvider(accountId: string): Promise<PrivateStateProvider> {
+  const { BrowserLevel } = await import("browser-level");
   return levelPrivateStateProvider({
     privateStateStoreName: "choreo-kits-local",
     privateStoragePasswordProvider: () => LOCAL_PASSWORD,
@@ -169,7 +169,7 @@ export async function publishKit(
   const publicDataProvider: PublicDataProvider = indexerPublicDataProvider(cfg.indexerUri, cfg.indexerWsUri);
 
   const { coinPublicKey, encryptionPublicKey } = await getWalletKeys(api, networkId);
-  const privateStateProvider = createPrivateStateProvider(coinPublicKey);
+  const privateStateProvider = await createPrivateStateProvider(coinPublicKey);
   const walletProvider: WalletProvider = new LaceWalletProvider(api, coinPublicKey, encryptionPublicKey);
   const midnightProvider: MidnightProvider = new LaceMidnightProvider(api);
 

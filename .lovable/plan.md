@@ -1,100 +1,113 @@
-# Tokenized Choreo Kits — Midnight ZK Single-Page Demo
+# Get unstuck — Docker-focused local Midnight stack
 
-A single-page Vite + React app on Midnight (Undeployed / local stack) where choreographers publish tokenized choreography "kits" (title + steps summary + price) as on-chain entries, with a ZK author commitment proving authorship without revealing the author's secret key. Tuned to the hackathon's judging criteria (Technology, Originality, Execution, Completion, Documentation, Business Value) and targeted at the **DeFi Track** (tokenized/licensable assets on Midnight) with strong overlap into **Gaming/Creative** (choreo sequences).
+Two real problems in your terminal output, plus one doc bug in the README:
 
-## Hackathon fit
+1. **`No default compiler set`** — the `compact` CLI is a version manager. It installed itself, but no `compactc` binary is on disk yet. Fix: run `compact update`. (Your `source ~/.bashrc` line silently failed because macOS zsh uses `~/.zshrc`, so `compact update` never ran.)
+2. **`Module not found "scripts/midnight-standalone.mjs"`** — that file was referenced in the README but never committed. We'll replace it with a proper `docker-compose.yml` (node + indexer + proof-server), which is what you actually want anyway on a Mac with Docker Desktop.
+3. `cp` errors are just downstream of #1 — once `compact compile` succeeds, `contracts/managed/tokenized-choreo-kits/{keys,zkir}` exist and the copies work.
 
-- **DeFi Track angle**: choreo kits as tokenized, licensable, resaleable content — confidential author identity, public catalog of kits + prices, verifiable authorship.
-- **Originality**: privacy-preserving IP registry for dancers (unusual domain for ZK).
-- **Completion**: end-to-end demo — connect, deploy, publish kit, browse kits — inside one page.
-- **Documentation**: single README with run steps + criteria mapping.
-- **Business value**: pitch as an MVP for a choreography licensing marketplace.
+## What you'll run after this plan lands
 
-## Scope (5-credit hard limit)
+```bash
+# 1. Fix the compiler (one-time)
+compact update
+compact --version   # expect a version, not "No default compiler set"
 
-- ONE Vite + React SPA (no router beyond the default index route).
-- ONE Compact contract (≤80 lines) — `TokenizedChoreoKits.compact`.
-- Lace wallet only. Local proof server on `:6300`. Local standalone stack on `:9944` / `:8088`.
-- No Lovable Cloud, no DB, no server auth, no AI calls, no IPFS (kit content stays inline as an `Opaque<"string">` JSON blob to stay within budget).
+# 2. Compile the contract + copy ZK assets into public/
+compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits
+cp -r contracts/managed/tokenized-choreo-kits/keys public/keys
+cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir
 
-## Contract (Compact 0.23)
+# 3. Bring up the local Midnight stack with Docker
+docker compose up -d          # pulls ~1 GB first time
+docker compose ps             # all three containers "Up"
+docker compose logs -f proof-server   # Ctrl+C to detach
 
-`contracts/TokenizedChoreoKits.compact`, ≤80 lines. Header comment credits the hackathon. Public ledger:
-- `kit_count: Counter`
-- `last_kit: Opaque<"string">` — JSON `{title, steps, priceDust}` set by the latest `publishKit` call
-- `last_author_commitment: Bytes<32>` — `persistentHash(["choreo:author:", seq, sk])`
+# 4. Point Lace at the local node
+#    Lace → Settings → Network → Custom → ws://localhost:9944
+#    Genesis wallet is pre-funded with unlimited tDUST (no faucet).
 
-Witness: `localSecretKey(): Bytes<32>` (32-byte value persisted in `localStorage`, wired via `witnesses`).
-
-Circuit: `publishKit(payload: Opaque<"string">): []` — mirrors the boilerplate `appendEntry` pattern (disclose payload, disclose author commitment, increment counter). Constructor initializes counter and `last_kit`.
-
-Compiled with `compact compile`, keys/zkir copied to `public/keys` and `public/zkir`.
-
-## Frontend flow (single page)
-
-1. Buffer polyfill as the first line of `src/main.tsx`.
-2. `<ClientOnly>` boundary wraps everything Midnight-related; providers loaded inside `useEffect`.
-3. **Connect Lace panel** (from the provided boilerplate) — shielded address + network pill.
-4. **Deploy panel** — button calls `deployContract` with witnesses; shows a persistent "Proving… 30–120s" state; on success writes address to `localStorage` (and prints it so the user can paste into `VITE_DEFAULT_CONTRACT`).
-5. **Publish Kit form** — title, steps textarea, price in tDUST → JSON payload → `publishKit` circuit call, same Proving state.
-6. **Kit feed** — read-only GraphQL query against `VITE_INDEXER_URL` (`contractAction(address).state`), decode via the compiled contract's `ledger()` helper (client-only import), display latest kit + author commitment (truncated) + entry count. Polls every 5s.
-7. Footer credit line on every screen.
-
-## Files to create
-
-```
-contracts/TokenizedChoreoKits.compact
-src/main.tsx                              (Buffer polyfill first line)
-src/App.tsx                               (single page composition)
-src/components/ClientOnly.tsx
-src/components/WalletConnectPanel.tsx     (from boilerplate)
-src/components/DeployPanel.tsx
-src/components/PublishKitForm.tsx
-src/components/KitFeed.tsx
-src/lib/use-midnight-wallet.ts            (from boilerplate)
-src/lib/lace.ts                           (waitForLace helper)
-src/lib/providers.ts                      (initProviders)
-src/lib/contract.ts                       (deploy + call helpers, lazy import managed/)
-src/lib/indexer.ts                        (readLedger + decode)
-src/lib/secret.ts                         (localStorage 32-byte secret)
-vite.config.ts                            (wasm + top-level-await, esnext)
-.env.example                              (all VITE_* secrets)
-README.md                                 (setup + judging-criteria map)
+# 5. Run the app
+cp .env.example .env
+bun install
+bun dev
 ```
 
-Note: TanStack Start default template will be reduced to a single index route; `__root.tsx` keeps its shell but head() gets real title/description ("Tokenized Choreo Kits — ZK licensing for choreography"). `<ClientOnly>` gates the entire Midnight surface so SSR/prerender stays safe.
+Teardown when you're done: `docker compose down` (add `-v` to also wipe the node's chain data volume).
 
-## Required secrets (Undeployed)
+## Files this plan will create / change
 
-- `VITE_NETWORK_ID=undeployed`
-- `VITE_INDEXER_URL=http://localhost:8088/api/v4/graphql`
-- `VITE_INDEXER_WS_URL=ws://localhost:8088/api/v4/graphql/ws`
-- `VITE_PROOF_SERVER_URL=http://localhost:6300`
-- `VITE_NODE_WS=ws://localhost:9944`
-- `VITE_DEFAULT_CONTRACT=<hex from local deploy>`
+### 1. `docker-compose.yml` (new, at repo root)
 
-## What the human runs locally (documented in README, not by Lovable)
+Three services on one Docker network, matching the ports already in `.env.example`:
 
-1. Install Compact compiler + `compact update`.
-2. `compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits` → copy `keys/` and `zkir/` into `public/`.
-3. Bring up local stack: `bun scripts/midnight-standalone.mjs up` (proof server + node + indexer).
-4. Point Lace to `ws://localhost:9944`.
-5. `VITE_NETWORK_ID=undeployed bun scripts/deploy-midnight.mjs` → paste hex into `VITE_DEFAULT_CONTRACT`.
+```yaml
+services:
+  proof-server:
+    image: midnightntwrk/proof-server:latest
+    command: midnight-proof-server -v
+    ports: ["6300:6300"]
+    restart: unless-stopped
 
-## Explicit non-goals
+  node:
+    image: midnightntwrk/midnight-node:latest    # standalone dev chain
+    command: ["--dev", "--rpc-external", "--ws-external", "--rpc-cors=all"]
+    ports: ["9944:9944", "9933:9933"]
+    volumes: ["midnight-node-data:/data"]
+    restart: unless-stopped
 
-- No IPFS/Pinata (payload inline).
-- No AI Gateway calls.
-- No marketplace transfer logic v1 — "resale" is framed as the license record; a follow-up is noted in the README.
-- No tests, no CI, no docs site.
+  indexer:
+    image: midnightntwrk/indexer-standalone:latest
+    environment:
+      - NODE_WS_URL=ws://node:9944
+    depends_on: [node]
+    ports: ["8088:8088"]
+    restart: unless-stopped
 
-## Judging-criteria mapping (README section)
+volumes:
+  midnight-node-data:
+```
 
-- **Technology**: Compact ZK circuit + persistentHash author commitment + local proof server.
-- **Originality**: privacy for choreographers — an underexplored ZK vertical.
-- **Execution**: one polished page, real Proving UX (30–120s state).
-- **Completion**: connect → deploy → publish → browse works end-to-end.
-- **Documentation**: single README covers setup, run, and criteria.
-- **Business Value**: framed as MVP for a choreo licensing marketplace.
+Exact image tags and env var names will be verified against `https://docs.midnight.network/llms-full.txt` during the build step — if the current standalone image publishes different names, the compose file will use those. The port mapping (`6300`, `9944`, `8088`) is fixed because `.env.example` already targets those.
 
-Confirm and I'll build it exactly as scoped.
+### 2. `scripts/midnight-stack.sh` (new, thin wrapper)
+
+Just a convenience shim so the README's `up` / `down` / `logs` verbs still work without needing a Node script:
+
+```bash
+#!/usr/bin/env bash
+case "$1" in
+  up)    docker compose up -d ;;
+  down)  docker compose down ;;
+  logs)  docker compose logs -f "${2:-}" ;;
+  ps)    docker compose ps ;;
+  *)     echo "usage: $0 {up|down|logs [service]|ps}"; exit 1 ;;
+esac
+```
+
+Made executable via `chmod +x`.
+
+### 3. `README.md` (edit — Docker-focused setup section)
+
+Replace the current "One-time local setup" block with the exact 5 commands above, plus:
+- A note that `source ~/.bashrc` should be `source ~/.zshrc` on macOS (or just skip it and run `compact update` directly — the installer already adds `~/.local/bin` to PATH).
+- A "Docker lifecycle" cheat sheet (`up`, `down`, `logs proof-server`, `ps`, `down -v` to reset chain).
+- Removal of every reference to `scripts/midnight-standalone.mjs`.
+
+### 4. `.env.example` — no change
+
+Already correct (`localhost:6300`, `localhost:8088`, `localhost:9944`).
+
+## What I will NOT touch
+
+- Any component under `src/` — the wallet, deploy, publish, and feed UI already point at the right URLs.
+- The Compact contract itself.
+- `vite.config.ts`, TanStack routes, or the SSR wrapper.
+
+## Verification before I hand it back
+
+- `docker compose config` parses cleanly.
+- `README.md` no longer mentions the missing bun script.
+- `scripts/midnight-stack.sh` is executable.
+
+Approve and I'll switch to build mode and apply the three file changes.

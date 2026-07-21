@@ -13,7 +13,8 @@
     "midnight:compile": "compact compile contracts/TokenizedChoreoKits.compact contracts/managed/tokenized-choreo-kits && rm -rf public/keys public/zkir && cp -r contracts/managed/tokenized-choreo-kits/keys public/keys && cp -r contracts/managed/tokenized-choreo-kits/zkir public/zkir",
     "midnight:up": "docker compose up -d && docker compose ps",
     "midnight:down": "docker compose down",
-    "midnight:logs": "docker compose logs -f"
+    "midnight:logs": "docker compose logs -f",
+    "compile": "bun run midnight:compile && bun run midnight:up && VITE_NETWORK_ID=undeployed bun scripts/deploy-midnight.mjs && bun run dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

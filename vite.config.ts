@@ -19,17 +19,16 @@ import topLevelAwait from "vite-plugin-top-level-await";
 function midnightSsrStub(): Plugin {
   const wasmStub = path.resolve("src/lib/midnight-ssr-stub.ts");
   const contractStub = path.resolve("src/lib/contract.ssr-stub.ts");
-  const wasmTargets = new Set([
-    "@midnight-ntwrk/ledger-v8",
-    "@midnight-ntwrk/onchain-runtime-v3",
-  ]);
   return {
     name: "midnight-ssr-stub",
     enforce: "pre",
     resolveId(id, _importer, options) {
       if (!options?.ssr) return;
-      if (wasmTargets.has(id)) return wasmStub;
       if (id === "@/lib/contract") return contractStub;
+      // Stub every Midnight SDK package during SSR — the home route is
+      // ssr:false, so these are never executed server-side, but the bundler
+      // still walks the import graph.
+      if (id.startsWith("@midnight-ntwrk/")) return wasmStub;
     },
   };
 }

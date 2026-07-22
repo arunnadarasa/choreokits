@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { publishKitLocal } from "@/lib/mint.server";
+
 
 export const Route = createFileRoute("/api/mint")({
   server: {
@@ -18,6 +18,7 @@ export const Route = createFileRoute("/api/mint")({
               { status: 400, headers: { "content-type": "application/json" } },
             );
           }
+          const { publishKitLocal } = await import("@/lib/mint.server");
           const result = await publishKitLocal(
             body.contractAddress,
             body.title,

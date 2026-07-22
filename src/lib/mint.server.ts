@@ -1,6 +1,9 @@
 // Server-only. Reuses the same in-process Fluent wallet pattern as
 // scripts/deploy-midnight.mjs. This is the ONLY way to mint on the
 // local Undeployed chain: Lace cannot balance/sign undeployed txs.
+if (typeof window !== "undefined") {
+  throw new Error("mint.server.ts must never be imported in the browser bundle");
+}
 
 import path from "node:path";
 import { pathToFileURL } from "node:url";

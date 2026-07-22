@@ -1,18 +1,22 @@
 import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { useCallback, useEffect, useState } from "react";
 import { publishKit } from "@/lib/contract";
+import type { DustInfo } from "@/lib/use-midnight-wallet";
 
 export function PublishKitForm({
   walletConnected,
   walletApi,
   contractAddress,
+  dust,
   onPublished,
 }: {
   walletConnected: boolean;
   walletApi: ConnectedAPI | null;
   contractAddress: string | null;
+  dust?: DustInfo;
   onPublished: (payload: KitPayload) => void;
 }) {
+  const dustEmpty = !dust || dust.balance <= 0n;
   const [title, setTitle] = useState("");
   const [steps, setSteps] = useState("");
   const [priceDust, setPriceDust] = useState("10");

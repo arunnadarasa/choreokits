@@ -51,16 +51,27 @@ export function WalletConnectPanel({
 
   const dustEmpty = w.status === "connected" && (!w.dust || w.dust.balance <= 0n);
 
+  const isUndeployed = expectedNetwork === "undeployed";
+
   return (
     <div className="p-5 border border-border rounded-md space-y-3 bg-card">
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs uppercase tracking-widest text-muted-foreground">
-          01 · connect lace
+          01 · connect lace {isUndeployed && <span className="opacity-60">(optional on undeployed)</span>}
         </span>
         {w.apiVersion && (
           <span className="text-[10px] font-mono opacity-60">connector v{w.apiVersion}</span>
         )}
       </div>
+
+      {isUndeployed && (
+        <p className="text-[11px] text-muted-foreground border border-dashed border-border rounded px-3 py-2">
+          On <code className="font-mono">undeployed</code>, Lace cannot balance or sign transactions
+          (Midnight docs limitation). Minting is handled server-side by the local genesis wallet — you
+          can skip connecting Lace and go straight to step 03.
+        </p>
+      )}
+
 
       {w.status === "detecting" && (
         <p className="text-sm text-muted-foreground">Detecting Midnight wallet…</p>

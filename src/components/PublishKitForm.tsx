@@ -3,6 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { publishKit } from "@/lib/contract";
 import type { DustInfo } from "@/lib/use-midnight-wallet";
 
+const NETWORK_ID = (import.meta.env.VITE_NETWORK_ID as string) || "undeployed";
+const IS_UNDEPLOYED = NETWORK_ID === "undeployed";
+
 export function PublishKitForm({
   walletConnected,
   walletApi,
@@ -35,15 +38,15 @@ export function PublishKitForm({
   const submit = useCallback(async () => {
     setError(null);
     setOk(null);
-    if (!walletConnected) {
-      setError("Connect Lace first.");
-      return;
-    }
     if (!contractAddress) {
       setError("Set the deployed contract address in step 2 first.");
       return;
     }
-    if (dustEmpty && walletApi) {
+    if (!IS_UNDEPLOYED && !walletConnected) {
+      setError("Connect Lace first.");
+      return;
+    }
+    if (!IS_UNDEPLOYED && dustEmpty && walletApi) {
       setError("Lace has 0 tDUST — fees can't be paid. Fund via scripts/fund-lace.sh, then Generate tDUST in Lace.");
       return;
     }
@@ -64,16 +67,29 @@ export function PublishKitForm({
       local.unshift(payload);
       localStorage.setItem("choreo:local-kits", JSON.stringify(local.slice(0, 20)));
 
-      if (!walletApi) {
+      if (IS_UNDEPLOYED) {
+        // Lace cannot sign on Undeployed. Route through the server API which
+        // uses the same in-process Fluent wallet as the deploy script.
+        const resp = await fetch("/api/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contractAddress,
+            title: payload.title,
+            steps: payload.steps,
+            priceDust: payload.priceDust,
+          }),
+        });
+        const data = (await resp.json().catch(() => ({}))) as { txId?: string; error?: string };
+        if (!resp.ok) throw new Error(data.error || `Mint failed (${resp.status})`);
+        setOk(`Submitted on-chain (server-signed). Tx: ${String(data.txId).slice(0, 24)}…`);
+      } else if (!walletApi) {
         await new Promise((r) => setTimeout(r, 2000));
         setOk("Kit staged locally. Connect Lace and set a deployed contract to broadcast on-chain.");
-      } else if (!contractAddress) {
-        throw new Error("Set the deployed contract address in step 2 first.");
       } else {
-        const networkId = (import.meta.env.VITE_NETWORK_ID as string) || "undeployed";
         const txId = await publishKit(
           walletApi,
-          networkId,
+          NETWORK_ID,
           contractAddress,
           payload.title,
           payload.steps,
@@ -92,13 +108,24 @@ export function PublishKitForm({
     }
   }, [walletConnected, walletApi, contractAddress, dustEmpty, title, steps, priceDust, onPublished]);
 
-  const disabled = proving || !walletConnected || !contractAddress || (dustEmpty && !!walletApi);
+  const disabled =
+    proving ||
+    !contractAddress ||
+    (!IS_UNDEPLOYED && (!walletConnected || (dustEmpty && !!walletApi)));
 
   return (
     <div className="p-5 border border-border rounded-md space-y-3 bg-card">
       <div className="text-xs uppercase tracking-widest text-muted-foreground">
         03 · publish choreo kit
       </div>
+
+      {IS_UNDEPLOYED && (
+        <p className="text-[11px] text-muted-foreground border border-dashed border-border rounded px-3 py-2">
+          <strong>Undeployed mode:</strong> signing with the local genesis wallet on the server.
+          Lace cannot balance transactions on <code className="font-mono">undeployed</code> — this
+          bypasses Lace entirely. Switch to Preview/Preprod to use Lace.
+        </p>
+      )}
 
       <div className="grid gap-2">
         <label className="text-[10px] uppercase tracking-widest text-muted-foreground">Title</label>
@@ -142,7 +169,7 @@ export function PublishKitForm({
         </button>
         {proving && (
           <span className="text-[11px] text-muted-foreground">
-            Generating ZK proof on local server. 30–120s is normal.
+            Generating ZK proof. Up to ~4 min on first mint (cold proof server), 30–60s after.
           </span>
         )}
       </div>
@@ -159,3 +186,4 @@ export type KitPayload = {
   priceDust: number;
   publishedAt: string;
 };
+

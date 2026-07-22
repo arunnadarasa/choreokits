@@ -1,32 +1,22 @@
-## Update `lovable-midnight` skill: cold-start proof timing
+Update the `.agents/skills/lovable-midnight/SKILL.md` file to include the critical lesson that the **deployer's genesis-funded seed is not the same as the user's Lace wallet balance on Undeployed**. A connected Lace wallet starts with 0 tDUST, so write transactions (mint/prove) will fail unless the wallet is funded first.
 
-Add the lesson from tonight's 224s "Proving…" scare so future agents warn users up front instead of debugging a non-bug.
+## Proposed changes
 
-### Edit 1 — replace line 27 (Non-negotiables, proof timing bullet)
+1. **Add a new "Funding the Undeployed wallet" section** (before or alongside the existing "Funding (only if you insist on preview/preprod)" section) that explains:
+   - On `Undeployed`, the deploy script uses the deterministic genesis-funded seed `…0002` — this funds the **deployer** wallet, not the Lace browser extension the demo user connects.
+   - Lace connected to `undeployed` starts with **0 tDUST**.
+   - Any contract write (mint, prove, etc.) requires tDUST for fees; without it, submission fails with a generic "Unexpected error submitting scoped transaction" or an insufficient-balance error.
+   - Fund Lace on Undeployed using the local dev faucet/tool (e.g. `midnight-local-dev` CLI) against the Lace unshielded address, or include a `scripts/fund-lace.sh` helper in the project.
+   - Show a UI guard: read `api.getDustBalance()`, display tDUST balance, and disable the write button with a "Fund your Lace wallet first" message when balance is zero.
 
-Replace the current one-liner:
+2. **Update the "Failure modes ranked by frequency" table** with a new row:
+   - Symptom: "Mint fails / Lace shows 0 / 250,000 tDUST" or "Unexpected error submitting scoped transaction" after Lace signs.
+   - Cause: Lace wallet on Undeployed has no tDUST; fees cannot be paid.
+   - Fix: Fund the Lace unshielded address with tDUST via the local dev faucet before minting; surface the balance in the UI so the user knows why the button is disabled.
 
-> Proofs on medium circuits (`k=14`) take **30–120s** on the local proof server (first proof is slowest; warm proofs are seconds). Every write UI must show a `Proving…` state and stay usable.
+3. **Update the "Retrospective" / best-practices list** to add:
+   - "Fund Lace on Undeployed before letting the user mint." The genesis seed only pays for the deploy script; every end-user wallet (including the demo wallet) needs its own tDUST.
 
-with an expanded bullet covering:
+## Why this matters
 
-- k=13/k=14 (~4k–8k rows) → **30–120s warm**, **up to ~4 min cold** on a laptop
-- First call after `docker compose up` loads the proving key (hundreds of MB) into RAM + JITs the WASM runtime → cold path is dominated by this, not the circuit
-- One user "Mint" can trigger **two proofs back-to-back**: app-side `midnight-js-contracts` prove, then Lace's own re-prove of the balanced tx before signing
-- UI must show "up to ~4 min on first mint" hint; no spinner timeout under 5 min
-- To demo on video: run one warm-up mint off-camera first — warm proofs drop to ~30–60s
-- macOS Docker Desktop adds ~20–30% overhead vs native Linux (Linux VM)
-
-### Edit 2 — update the matching row in "Failure modes ranked by frequency"
-
-Change:
-
-> | Proof hangs 30–120 s on first call | First warm-up after container boot | Expected; show a `Proving…` state |
-
-to reflect the true cold-start ceiling (~4 min) and the double-prove (app + Lace), pointing at the same guidance.
-
-### Apply
-
-Run `skills--apply_draft` on `.agents/skills/lovable-midnight` so the update goes live.
-
-No other files touched. No app code changes.
+The current skill mentions funding only for Preview/Preprod and implies Undeployed skips the faucet dance. That is true for the deployer, but misleading for the end-user Lace wallet. Several debugging turns in the hackathon were spent on this exact confusion, so the skill should call it out explicitly.

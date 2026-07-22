@@ -383,6 +383,45 @@ tNIGHT ≠ tDUST. Faucet dispenses tNIGHT; deploys spend tDUST.
 3. In Lace, click **Generate tDUST** to delegate → tDUST appears.
 4. Only now can you deploy.
 
+## Funding the Undeployed wallet — the hidden gotcha
+
+The genesis-funded seed (`…0002`) only funds the **deployer wallet** used by `scripts/deploy-midnight.mjs`. It does **not** fund the Lace browser extension that a demo user connects to `VITE_NETWORK_ID=undeployed`.
+
+- Lace connected to `undeployed` starts with **0 / 250,000 tDUST**.
+- Every contract write (mint, prove, etc.) pays fees in tDUST.
+- If the Lace wallet has no tDUST, the transaction fails after signing with a generic "Unexpected error submitting scoped transaction" or an insufficient-balance error.
+
+### How to fund Lace on Undeployed
+
+Use the local dev faucet/tool against the Lace **unshielded** address:
+
+```bash
+# Example using midnight-local-dev (install from Midnight docs/tooling)
+midnight-local-dev faucet --to $(cat lace-unshielded-address.txt) --network undeployed
+```
+
+Or ship a helper script in the repo:
+
+```bash
+# scripts/fund-lace.sh
+ADDRESS=$1
+midnight-local-dev faucet --to "$ADDRESS" --network undeployed
+```
+
+Run it from the terminal where Docker Compose is running, then refresh Lace and confirm the tDUST balance is non-zero before minting.
+
+### UI guard
+
+Read the Lace dust balance and disable the write button when it is zero:
+
+```ts
+const dust = await api.getDustBalance();
+// dust is usually an object like { balance: bigint, ... }
+```
+
+Display the balance prominently (e.g. "71 / 250,000 tDUST") and show a warning: "Fund your Lace wallet with tDUST before minting." This prevents the user from reaching a cryptic proof-submission error.
+
+
 ## Failure modes ranked by frequency (with new rows)
 
 | Symptom | Cause | Fix |
@@ -412,7 +451,9 @@ tNIGHT ≠ tDUST. Faucet dispenses tNIGHT; deploys spend tDUST.
 | `Lace not found` | Extension not installed / injected late | Poll `window.midnight` for 5 s before rejecting |
 | `Cannot find package 'bip39'` etc. in deploy script | Node script deps not `bun add`-ed | Add every import to `package.json` |
 | Preview shielded/unshielded prefix mismatch (`mn_addr_preview1…` vs `mn_shield-addr_test1…`) | Encoders derived through different `NetworkId` values | Use ONE `NetworkId` for both encoders in the script; validate the emitted prefix |
+| Mint fails after Lace signs / Lace shows 0 / 250,000 tDUST | Lace wallet on Undeployed has no tDUST for fees | Fund the Lace unshielded address with tDUST via the local dev faucet; surface `getDustBalance()` in the UI and disable the mint button when balance is zero |
 | User pastes their recovery phrase in chat | Full-wallet-control exfiltration risk | REFUSE. Give them a local `scripts/check-midnight-wallet.mjs` that reads `MIDNIGHT_WALLET_SEED` from their shell env and prints only public addresses |
+
 
 ## Network → NetworkId mapping
 
@@ -443,8 +484,10 @@ Never accept a seed phrase in chat. Ship a local script that reads `MIDNIGHT_WAL
 
 1. **Default to Undeployed + Docker Compose from minute one.** Preview/Preprod's tNIGHT→tDUST dance is a hackathon killer. Only reach for the hosted testnets when the demo needs real Lace users.
 2. **Write `scripts/deploy-midnight.mjs` BEFORE any UI.** All the deep pain (TTL injection, witness shape, password rules, seed index, ZK config path, retry-with-fresh-`privateStateId`) lives here. A working deploy unblocks everything downstream; a broken deploy blocks all of it.
-3. **Assume every wallet-SDK adapter needs a TTL shim.** Any `balanceTx` you hand to `midnight-js-contracts` must force `ttlOneHour()` — never trust the caller.
-4. **Bake artefact copy into `bun run compile`.** `compact compile` → copy `keys/`, `zkir/`, `contract/` into `public/contract/` in one script; the browser silently drifts otherwise.
+3. **Fund Lace on Undeployed before letting the user mint.** The genesis-funded seed (`…0002`) only pays for the deploy script. Every connected Lace wallet (including the demo wallet) starts with 0 tDUST and needs its own funds, or writes will fail with a cryptic submission error. Surface `getDustBalance()` in the UI and disable the mint button when balance is zero.
+4. **Assume every wallet-SDK adapter needs a TTL shim.** Any `balanceTx` you hand to `midnight-js-contracts` must force `ttlOneHour()` — never trust the caller.
+5. **Bake artefact copy into `bun run compile`.** `compact compile` → copy `keys/`, `zkir/`, `contract/` into `public/contract/` in one script; the browser silently drifts otherwise.
+
 5. **Pin every Docker tag.** `latest` doesn't exist for `midnight-node`, and the partner-chain 2.x tags don't run standalone. `0.22.5` / `4.0.2` / `8.0.3` is the current known-good triple.
 6. **Fail fast on a crash-looping node** — probe `docker inspect` health before the 15 s sync wait, or you'll spend 95 s per failed attempt discovering the container never came up.
 7. **On TanStack Start, keep Nitro ENABLED and stub Midnight during the SSR pass.** The instinct to `nitro: false` is a trap — it swaps a fixable build error for an unfixable runtime one on the published Worker. Route stays `ssr: false`, `midnightSsrStub()` handles the bundler crawl, `vite-plugin-top-level-await` is client-only.

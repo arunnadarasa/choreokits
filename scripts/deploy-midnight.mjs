@@ -14,7 +14,8 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { WebSocket } from "ws";
-import { firstValueFrom } from "rxjs";
+import { firstValueFrom, throwError } from "rxjs";
+import { filter, timeout } from "rxjs/operators";
 
 
 const execFileP = promisify(execFile);

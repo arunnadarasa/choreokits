@@ -20,17 +20,25 @@ function midnightSsrStub(): Plugin {
   const wasmStub = path.resolve("src/lib/midnight-ssr-stub.ts");
   const contractStub = path.resolve("src/lib/contract.ssr-stub.ts");
   const contractReal = path.resolve("src/lib/contract.ts");
+  const mintStub = path.resolve("src/lib/mint.ssr-stub.ts");
+  const mintReal = path.resolve("src/lib/mint.server.ts");
+  // Only stub during production builds. In dev, the SSR module runner
+  // executes in Node and can load the real @midnight-ntwrk/* packages,
+  // which is required for the /api/mint route (server-side Fluent wallet).
+  let isBuild = false;
   return {
     name: "midnight-ssr-stub",
     enforce: "pre",
+    config(_c, env) {
+      isBuild = env.command === "build";
+    },
     async resolveId(id, importer, options) {
       if (!options?.ssr) return;
+      if (!isBuild) return;
       if (id.startsWith("@midnight-ntwrk/")) return wasmStub;
-      if (id === "@/lib/contract" || id === "./contract" || id === "./contract.ts") {
-        // Fall through to resolver, then rewrite below.
-      }
       const resolved = await this.resolve(id, importer, { ...options, skipSelf: true });
       if (resolved && resolved.id === contractReal) return contractStub;
+      if (resolved && resolved.id === mintReal) return mintStub;
       return resolved;
     },
   };

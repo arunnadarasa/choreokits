@@ -90,9 +90,9 @@ export function PublishKitForm({
       setProving(false);
       setElapsed(0);
     }
-  }, [walletConnected, walletApi, contractAddress, title, steps, priceDust, onPublished]);
+  }, [walletConnected, walletApi, contractAddress, dustEmpty, title, steps, priceDust, onPublished]);
 
-  const disabled = proving || !walletConnected || !contractAddress;
+  const disabled = proving || !walletConnected || !contractAddress || (dustEmpty && !!walletApi);
 
   return (
     <div className="p-5 border border-border rounded-md space-y-3 bg-card">

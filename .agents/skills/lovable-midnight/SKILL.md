@@ -17,6 +17,14 @@ Build a Midnight Network dApp in one shot. Midnight is a privacy-first L1 where 
 
 For a hackathon under a deadline, **default to Undeployed** and skip the tNIGHT→tDUST faucet dance entirely. Do not start on preview/preprod "just in case" — the faucet + delegation flow burns 30+ min per new user.
 
+## Lace CANNOT sign on Undeployed — bypass with a server-side Fluent wallet
+
+Per Midnight docs: **Lace cannot balance or sign transactions on the local `undeployed` chain** (only Preview/Preprod). Symptom: ZK proof completes, Lace's "Prove transaction" dialog spins forever or submission fails with `Unexpected error submitting scoped transaction '<unnamed>': Error`, even with tDUST funded.
+
+Fix: route every Undeployed write through a server API (TanStack `createFileRoute('/api/mint')`) that reuses the same `FluentWalletBuilder` + genesis seed `…0002` as `scripts/deploy-midnight.mjs`. Cache the wallet in a module-scope promise so the first call warms it and subsequent calls are fast. Frontend detects `VITE_NETWORK_ID === "undeployed"` and POSTs `{contractAddress, title, ...}` to `/api/mint` instead of calling Lace. Skip the Lace-connect and tDUST-balance guards on Undeployed entirely.
+
+Cloudflare build: add `src/lib/mint.server.ts` → `src/lib/mint.ssr-stub.ts` to the `midnightSsrStub` swap list (same pattern as `contract.ts`), and gate the stub on `command === "build"` so dev SSR still loads real midnight libs for the API route. The published Worker cannot reach the local Docker stack anyway; the stub just returns a 500 with a clear "dev-only" message.
+
 ## Non-negotiables
 
 - **Compact language `0.23`**, MidnightJS `midnight-js-contracts@4.1.1`, `wallet@4.0.0`, `wallet-sdk-hd@3.1.0-beta.1`, `midnight-js-utils` (for `ttlOneHour`).

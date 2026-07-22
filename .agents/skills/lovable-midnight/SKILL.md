@@ -407,7 +407,7 @@ tNIGHT ≠ tDUST. Faucet dispenses tNIGHT; deploys spend tDUST.
 | `TypeError: undefined is not iterable` reading `unshieldedAddress` | Lace returns raw string in some builds | Handle both `string` and `{ unshieldedAddress }` |
 | `ReferenceError: Buffer is not defined` | Missing polyfill | `import { Buffer } from 'buffer'; globalThis.Buffer = Buffer;` as FIRST line of client entry |
 | Contract state undefined after deploy | ZK keys not served to browser | Ensure `public/contract/{keys,zkir,contract}/` populated by `bun run compile` |
-| Proof hangs 30–120 s on first call | First warm-up after container boot | Expected; show a `Proving…` state |
+| Proof "hangs" 60–240 s on first Mint | Cold proof server loading proving key + JITing WASM; then Lace re-proves the balanced tx a second time before signing | Expected — one Mint = two proofs. Show a `Proving…` state with "up to ~4 min on first mint"; no timeout under 5 min. Warm subsequent proofs drop to ~30–60s. |
 | `window is not defined` at build/SSR | MidnightJS at module scope in a TanStack route | Move behind `useEffect` / `<ClientOnly>`; deploys via Node script only |
 | `Lace not found` | Extension not installed / injected late | Poll `window.midnight` for 5 s before rejecting |
 | `Cannot find package 'bip39'` etc. in deploy script | Node script deps not `bun add`-ed | Add every import to `package.json` |

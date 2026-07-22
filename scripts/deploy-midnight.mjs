@@ -214,10 +214,22 @@ async function main() {
   await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
   await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
 
+  // Pre-flight: proof-server /version must respond.
+  try {
+    const r = await fetch(`${PROOF_SERVER_URL}/version`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    logger.info(`proof-server /version OK: ${(await r.text()).trim()}`);
+  } catch (e) {
+    throw new Error(
+      `proof-server /version check failed (${e?.message ?? e}). Run:\n  curl ${PROOF_SERVER_URL}/version\nand restart docker if needed: docker compose restart proof-server`,
+    );
+  }
+
   // Wait until the node is actually producing blocks. Without this the wallet
   // stamps ttlOneHour() against a stale tip and the tx is rejected with
   // "1010: Invalid Transaction: Custom error: 171".
   await waitForBlockHeight(INDEXER_URL, 2, 60_000);
+
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,

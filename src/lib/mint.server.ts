@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { firstValueFrom } from "rxjs";
+// @ts-expect-error - ws has no bundled types in this project
 import { WebSocket } from "ws";
 
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
@@ -51,7 +52,7 @@ async function waitForWalletReady(wallet: any, timeoutMs = 90_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const state = await firstValueFrom(wallet.state());
+      const state = (await firstValueFrom(wallet.state())) as any;
       const synced = state?.syncProgress?.synced === true;
       const hasDust = Object.values(state?.balances ?? {}).some((v: any) => {
         try { return BigInt(v as any) > 0n; } catch { return false; }

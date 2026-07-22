@@ -259,9 +259,11 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
-  // Wait until the wallet reports it has synced to the tip AND sees a non-zero
-  // dust balance. Fixed 15s sleeps race with WS reconnects on a cold chain.
-  await waitForWalletReady(wallet, 90_000);
+  // Wait for a spendable DUST coin (not just sync). A wallet can report
+  // synced-to-tip at block 0/1 with zero spendable UTXOs — deploying then
+  // guarantees "Custom error: 171" from the mempool.
+  await waitForSpendableDust(wallet, 300_000);
+
 
 
 

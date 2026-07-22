@@ -348,12 +348,20 @@ async function main() {
       const msg = String(e?.message ?? e);
       const retryable = /Insufficient Funds|Custom error: 171|Invalid Transaction|Transaction submission error/i.test(msg);
       if (retryable && attempt < maxAttempts) {
-        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); retrying in 10s...`);
-        await setTimeout(10_000);
+        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); re-checking wallet dust before retrying...`);
+        if (!(await walletHasDust(wallet))) {
+          logger.warn("Wallet has no spendable DUST — waiting up to 120s for it to arrive before retry.");
+          try { await waitForSpendableDust(wallet, 120_000); } catch (waitErr) {
+            throw new Error(`Retry aborted: ${waitErr.message}`);
+          }
+        } else {
+          await setTimeout(10_000);
+        }
         continue;
       }
       throw e;
     }
+
   }
 
 

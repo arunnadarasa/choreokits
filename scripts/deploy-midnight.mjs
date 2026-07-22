@@ -138,34 +138,56 @@ async function waitForBlockHeight(indexerUrl, minHeight, timeoutMs = 60_000) {
   throw new Error(`Node did not reach block height ${minHeight} within ${timeoutMs}ms`);
 }
 
-async function waitForWalletReady(wallet, timeoutMs = 90_000) {
-  const start = Date.now();
-  logger.info("Waiting for wallet to reach tip and see dust balance...");
+async function waitForSpendableDust(wallet, timeoutMs = 300_000) {
+  logger.info(`Waiting for wallet to receive a spendable DUST coin (timeout ${timeoutMs}ms)...`);
   let lastLog = "";
-  while (Date.now() - start < timeoutMs) {
+  const sub = wallet.state().subscribe((state) => {
     try {
-      const state = await firstValueFrom(wallet.state());
-      const synced = state?.syncProgress?.synced === true;
+      const sp = state?.syncProgress ?? {};
+      const dust = state?.dust ?? {};
       const balances = state?.balances ?? {};
-      const hasDust = Object.values(balances).some((v) => {
-        try { return BigInt(v) > 0n; } catch { return false; }
-      });
-      const line = `  synced=${synced} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
+      const coins = Array.isArray(dust.availableCoins) ? dust.availableCoins.length : 0;
+      const line = `  synced=${sp.synced === true} applyGap=${sp.applyGap ?? "?"} sourceGap=${sp.sourceGap ?? "?"} dustCoins=${coins} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
       if (line !== lastLog) {
         logger.info(line);
         lastLog = line;
       }
-      if (synced && hasDust) {
-        logger.info("Wallet is ready.");
-        return;
-      }
-    } catch (e) {
-      // state stream may not be primed yet
+    } catch {
+      // ignore
     }
-    await setTimeout(2_000);
+  });
+  try {
+    await firstValueFrom(
+      wallet.state().pipe(
+        filter((s) => (s?.dust?.availableCoins?.length ?? 0) >= 1),
+        timeout({
+          each: timeoutMs,
+          with: () => throwError(() => new Error(
+            `Wallet never received a spendable DUST coin within ${timeoutMs}ms. ` +
+            `Preconditions to check:\n` +
+            `  1. proof-server healthy:  curl http://localhost:6300/version\n` +
+            `  2. node producing blocks: docker compose logs --tail=40 node | grep Imported\n` +
+            `  3. genesis seed matches your stack (currently ...0002)\n` +
+            `  4. try a clean restart:   docker compose down -v && bun run compile`,
+          )),
+        }),
+      ),
+    );
+    logger.info("Wallet has a spendable DUST coin. Ready to deploy.");
+  } finally {
+    sub.unsubscribe();
   }
-  logger.warn(`Wallet did not fully sync within ${timeoutMs}ms; proceeding anyway (retry loop will catch TTL failures).`);
 }
+
+async function walletHasDust(wallet) {
+  try {
+    const state = await firstValueFrom(wallet.state());
+    return (state?.dust?.availableCoins?.length ?? 0) >= 1;
+  } catch {
+    return false;
+  }
+}
+
 
 
 

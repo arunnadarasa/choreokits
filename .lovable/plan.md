@@ -1,68 +1,32 @@
-## Diagnosis (confirmed)
+## Update `lovable-midnight` skill: cold-start proof timing
 
-Lace shows `0 / 0 tDUST · tDUST Tank Empty`. The `publishKit` proof succeeds (you saw the Lace "Prove transaction" dialog with a real proof + binding_commitment), but Lace can't pay fees on submit, so `submitTransaction` rejects with the opaque scoped-transaction error. The Compact contract, ZK stack, and `balanceTx`/`submitTx` adapters are fine — the wallet is unfunded.
+Add the lesson from tonight's 224s "Proving…" scare so future agents warn users up front instead of debugging a non-bug.
 
-## Fix in three parts
+### Edit 1 — replace line 27 (Non-negotiables, proof timing bullet)
 
-### 1. Fund Lace with tNIGHT using midnight-local-dev (5 min, one-time)
+Replace the current one-liner:
 
-Add `scripts/fund-lace.sh` documenting the exact commands:
+> Proofs on medium circuits (`k=14`) take **30–120s** on the local proof server (first proof is slowest; warm proofs are seconds). Every write UI must show a `Proving…` state and stay usable.
 
-```bash
-# In a second terminal, alongside our docker-compose stack:
-git clone https://github.com/midnightntwrk/midnight-local-dev.git /tmp/midnight-local-dev
-cd /tmp/midnight-local-dev
-npm install
-npm start
-# Menu → 2  (Fund accounts by public key)
-# Paste your Lace UNSHIELDED address (mn_addr_undeployed1...)
-```
+with an expanded bullet covering:
 
-Wallet receives 50,000 tNIGHT. Then in Lace: **Generate tDUST** on that tNIGHT to start dust generation. After ~1 block the "tDUST Tank Empty" chip flips to a live balance.
+- k=13/k=14 (~4k–8k rows) → **30–120s warm**, **up to ~4 min cold** on a laptop
+- First call after `docker compose up` loads the proving key (hundreds of MB) into RAM + JITs the WASM runtime → cold path is dominated by this, not the circuit
+- One user "Mint" can trigger **two proofs back-to-back**: app-side `midnight-js-contracts` prove, then Lace's own re-prove of the balanced tx before signing
+- UI must show "up to ~4 min on first mint" hint; no spinner timeout under 5 min
+- To demo on video: run one warm-up mint off-camera first — warm proofs drop to ~30–60s
+- macOS Docker Desktop adds ~20–30% overhead vs native Linux (Linux VM)
 
-Caveat: `midnight-local-dev` boots its own node/indexer/proof-server on the same ports we use. Two options, both documented in the README:
-- **Option A (simpler for tonight):** stop our `docker compose` stack, run midnight-local-dev's stack instead, fund Lace, then swap back. Chain state is per-container so we redeploy the contract afterwards — that's already automated by `bun run compile`.
-- **Option B (cleaner):** run only midnight-local-dev's funding CLI against our running node by pointing its RPC/indexer envs at `ws://localhost:9944` / `http://localhost:8088`. I'll add a helper script that sets those env vars before `npm start`.
+### Edit 2 — update the matching row in "Failure modes ranked by frequency"
 
-### 2. Surface dust status in the UI so this never happens silently again
+Change:
 
-Edit `src/lib/use-midnight-wallet.ts` to also read on connect:
-- `getDustBalance()` → `{ cap, balance }`
-- `getDustAddress()` → `dustAddress`
-- `getUnshieldedAddress()` → the address to paste into the faucet
+> | Proof hangs 30–120 s on first call | First warm-up after container boot | Expected; show a `Proving…` state |
 
-Edit `src/components/WalletConnectPanel.tsx` to render:
-- Dust balance / cap chip (green if `balance > 0`, red "tDUST Tank Empty" otherwise)
-- The unshielded address with a copy button, plus a one-line "Fund with midnight-local-dev → menu option 2" hint
-- Link to the Lace "Generate tDUST" flow
+to reflect the true cold-start ceiling (~4 min) and the double-prove (app + Lace), pointing at the same guidance.
 
-Edit `src/components/PublishKitForm.tsx` to disable Mint when `dust.balance <= 0n` with the message "Fund Lace with tNIGHT and generate tDUST first (see step 01)".
+### Apply
 
-### 3. Better error surfacing in the submit adapter
+Run `skills--apply_draft` on `.agents/skills/lovable-midnight` so the update goes live.
 
-In `src/lib/contract.ts` `LaceMidnightProvider.submitTx`, when Lace throws the scoped-transaction error, check the connected wallet's current `getDustBalance()` and if it's zero throw:
-
-> "Lace couldn't submit: your dust tank is empty. Fund tNIGHT via midnight-local-dev (menu → 2) and click 'Generate tDUST' in Lace, then retry."
-
-Keep the existing "already/duplicate/known" short-circuit that returns `tx.transactionHash()`.
-
-### 4. README update
-
-Add a "Funding Lace (Undeployed)" section right under the quick-start with the 3 commands above and a screenshot placeholder. Mention this is a one-time-per-fresh-chain step; after `docker compose down -v` the funding must be redone.
-
-## What we do NOT change
-
-- `LaceWalletProvider.balanceTx` — the current `Transaction.deserialize("signature","proof","binding", bytes)` path is correct for a Lace-sealed tx.
-- The Compact contract.
-- Deploy script.
-
-## Expected result
-
-After funding (~2 min) Lace shows a non-zero tDUST balance, the UI shows a green dust chip, Mint enables, Lace proves once, submit returns a tx id, and the Kit Feed's "chain · synced" row updates from the indexer.
-
-## Answer to your question
-
-- **`midnightntwrk/midnight-wallet`** — this is the wallet-SDK monorepo. Useful reference for `registerNightUtxosForDustGeneration` if we ever want to skip Lace's UI and register from our app, but not needed tonight.
-- **`midnightntwrk/midnight-dapp-connector-api`** — this is the same `@midnight-ntwrk/dapp-connector-api` package we already use. No change.
-- **`midnightntwrk/midnight-wallet-dapp`** — reference dApp; good for cross-checking our balance/submit flow but nothing to import.
-- **`midnightntwrk/midnight-local-dev`** — this is the one that unblocks you. Its interactive CLI is exactly the faucet we're missing.
+No other files touched. No app code changes.

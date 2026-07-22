@@ -129,7 +129,32 @@ crash-loop on a standalone stack.
 - **Stale chain state after a compose or image-tag change** — always `docker compose down -v` (wipes the volume) before re-running `bun run compile`.
 
 Point Lace at the local node: **Settings → Network → Custom → `ws://localhost:9944`**.
-The genesis wallet is pre-funded with unlimited tDUST — no faucet.
+
+## Fund Lace with tNIGHT + tDUST (one-time per fresh chain)
+
+Fresh chains start empty for browser wallets. Lace connects fine, but until it has
+tDUST it can't pay fees, so **Mint kit** will fail with `Unexpected error submitting
+scoped transaction '<unnamed>': Error`.
+
+In a second terminal (leave the main app running):
+
+```bash
+scripts/fund-lace.sh
+```
+
+That clones and starts [`midnightntwrk/midnight-local-dev`](https://github.com/midnightntwrk/midnight-local-dev),
+which ships an interactive faucet CLI.
+
+1. In Lace, copy your **unshielded** address (shown on the app's `01 · connect lace` panel).
+   Prefix: `mn_addr_undeployed1…`.
+2. In the CLI, select **option 2** — "Fund accounts by public key" — and paste that address.
+   The wallet receives **50,000 tNIGHT**.
+3. Back in Lace, tap **Generate tDUST** on the tNIGHT balance. Within one block the
+   `tDUST tank empty` chip in the app flips to a live number.
+4. Now **Mint kit** goes through.
+
+After `docker compose down -v` (or any chain reset) you'll need to fund again.
+
 
 
 ## Run the app

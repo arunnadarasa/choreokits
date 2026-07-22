@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@/components/ClientOnly";
+import type { DustInfo } from "@/lib/use-midnight-wallet";
 
 const WalletConnectPanel = lazy(() =>
   import("@/components/WalletConnectPanel").then((m) => ({ default: m.WalletConnectPanel })),
@@ -93,6 +94,7 @@ function Header() {
 function Demo() {
   const [walletAddr, setWalletAddr] = useState<string | null>(null);
   const [walletApi, setWalletApi] = useState<ConnectedAPI | null>(null);
+  const [dust, setDust] = useState<DustInfo>(null);
   const [contractAddr, setContractAddr] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -109,6 +111,7 @@ function Demo() {
         expectedNetwork={(import.meta.env.VITE_NETWORK_ID as string) || "undeployed"}
         onConnected={setWalletAddr}
         onApiReady={setWalletApi}
+        onDustChange={setDust}
       />
       <DeployPanel
         walletConnected={!!walletAddr}
@@ -122,6 +125,7 @@ function Demo() {
         walletConnected={!!walletAddr}
         walletApi={walletApi}
         contractAddress={contractAddr}
+        dust={dust}
         onPublished={() => setRefreshTick((t) => t + 1)}
       />
       <KitFeed contractAddress={contractAddr} refreshTick={refreshTick} />

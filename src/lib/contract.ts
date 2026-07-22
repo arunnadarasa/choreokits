@@ -166,6 +166,24 @@ class LaceMidnightProvider implements MidnightProvider {
       if (/already|duplicate|known/i.test(msg)) {
         return tx.transactionHash();
       }
+      // Detect the empty-dust case and surface a clear next step. Lace usually
+      // throws a generic "Unexpected error submitting scoped transaction …"
+      // when the wallet has zero tDUST to pay fees.
+      try {
+        const dustApi = this.api as unknown as { getDustBalance?: () => Promise<{ balance: bigint }> };
+        if (typeof dustApi.getDustBalance === "function") {
+          const d = await dustApi.getDustBalance();
+          const bal = typeof d?.balance === "bigint" ? d.balance : BigInt(d?.balance ?? 0);
+          if (bal <= 0n) {
+            throw new Error(
+              "Lace has 0 tDUST — cannot pay transaction fees. Fund your unshielded address via scripts/fund-lace.sh (midnight-local-dev menu → option 2), then click 'Generate tDUST' in Lace and retry.",
+            );
+          }
+        }
+      } catch (probe) {
+        if (probe instanceof Error && /0 tDUST/.test(probe.message)) throw probe;
+        // ignore probe failure — fall through to generic error
+      }
       throw new Error(`Lace rejected submission: ${msg || "unknown error"}`);
     }
     return tx.transactionHash();

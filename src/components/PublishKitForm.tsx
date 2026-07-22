@@ -1,18 +1,22 @@
 import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
 import { useCallback, useEffect, useState } from "react";
 import { publishKit } from "@/lib/contract";
+import type { DustInfo } from "@/lib/use-midnight-wallet";
 
 export function PublishKitForm({
   walletConnected,
   walletApi,
   contractAddress,
+  dust,
   onPublished,
 }: {
   walletConnected: boolean;
   walletApi: ConnectedAPI | null;
   contractAddress: string | null;
+  dust?: DustInfo;
   onPublished: (payload: KitPayload) => void;
 }) {
+  const dustEmpty = !dust || dust.balance <= 0n;
   const [title, setTitle] = useState("");
   const [steps, setSteps] = useState("");
   const [priceDust, setPriceDust] = useState("10");
@@ -37,6 +41,10 @@ export function PublishKitForm({
     }
     if (!contractAddress) {
       setError("Set the deployed contract address in step 2 first.");
+      return;
+    }
+    if (dustEmpty && walletApi) {
+      setError("Lace has 0 tDUST — fees can't be paid. Fund via scripts/fund-lace.sh, then Generate tDUST in Lace.");
       return;
     }
     if (!title.trim() || !steps.trim()) {
@@ -82,9 +90,9 @@ export function PublishKitForm({
       setProving(false);
       setElapsed(0);
     }
-  }, [walletConnected, walletApi, contractAddress, title, steps, priceDust, onPublished]);
+  }, [walletConnected, walletApi, contractAddress, dustEmpty, title, steps, priceDust, onPublished]);
 
-  const disabled = proving || !walletConnected || !contractAddress;
+  const disabled = proving || !walletConnected || !contractAddress || (dustEmpty && !!walletApi);
 
   return (
     <div className="p-5 border border-border rounded-md space-y-3 bg-card">

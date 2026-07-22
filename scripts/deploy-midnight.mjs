@@ -14,7 +14,8 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { WebSocket } from "ws";
-import { firstValueFrom } from "rxjs";
+import { firstValueFrom, throwError } from "rxjs";
+import { filter, timeout } from "rxjs/operators";
 
 
 const execFileP = promisify(execFile);
@@ -137,34 +138,56 @@ async function waitForBlockHeight(indexerUrl, minHeight, timeoutMs = 60_000) {
   throw new Error(`Node did not reach block height ${minHeight} within ${timeoutMs}ms`);
 }
 
-async function waitForWalletReady(wallet, timeoutMs = 90_000) {
-  const start = Date.now();
-  logger.info("Waiting for wallet to reach tip and see dust balance...");
+async function waitForSpendableDust(wallet, timeoutMs = 300_000) {
+  logger.info(`Waiting for wallet to receive a spendable DUST coin (timeout ${timeoutMs}ms)...`);
   let lastLog = "";
-  while (Date.now() - start < timeoutMs) {
+  const sub = wallet.state().subscribe((state) => {
     try {
-      const state = await firstValueFrom(wallet.state());
-      const synced = state?.syncProgress?.synced === true;
+      const sp = state?.syncProgress ?? {};
+      const dust = state?.dust ?? {};
       const balances = state?.balances ?? {};
-      const hasDust = Object.values(balances).some((v) => {
-        try { return BigInt(v) > 0n; } catch { return false; }
-      });
-      const line = `  synced=${synced} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
+      const coins = Array.isArray(dust.availableCoins) ? dust.availableCoins.length : 0;
+      const line = `  synced=${sp.synced === true} applyGap=${sp.applyGap ?? "?"} sourceGap=${sp.sourceGap ?? "?"} dustCoins=${coins} balances=${JSON.stringify(balances, (_, v) => typeof v === "bigint" ? v.toString() : v)}`;
       if (line !== lastLog) {
         logger.info(line);
         lastLog = line;
       }
-      if (synced && hasDust) {
-        logger.info("Wallet is ready.");
-        return;
-      }
-    } catch (e) {
-      // state stream may not be primed yet
+    } catch {
+      // ignore
     }
-    await setTimeout(2_000);
+  });
+  try {
+    await firstValueFrom(
+      wallet.state().pipe(
+        filter((s) => (s?.dust?.availableCoins?.length ?? 0) >= 1),
+        timeout({
+          each: timeoutMs,
+          with: () => throwError(() => new Error(
+            `Wallet never received a spendable DUST coin within ${timeoutMs}ms. ` +
+            `Preconditions to check:\n` +
+            `  1. proof-server healthy:  curl http://localhost:6300/version\n` +
+            `  2. node producing blocks: docker compose logs --tail=40 node | grep Imported\n` +
+            `  3. genesis seed matches your stack (currently ...0002)\n` +
+            `  4. try a clean restart:   docker compose down -v && bun run compile`,
+          )),
+        }),
+      ),
+    );
+    logger.info("Wallet has a spendable DUST coin. Ready to deploy.");
+  } finally {
+    sub.unsubscribe();
   }
-  logger.warn(`Wallet did not fully sync within ${timeoutMs}ms; proceeding anyway (retry loop will catch TTL failures).`);
 }
+
+async function walletHasDust(wallet) {
+  try {
+    const state = await firstValueFrom(wallet.state());
+    return (state?.dust?.availableCoins?.length ?? 0) >= 1;
+  } catch {
+    return false;
+  }
+}
+
 
 
 
@@ -191,10 +214,22 @@ async function main() {
   await waitForService(INDEXER_URL, "indexer", 120_000, "midnight-node");
   await waitForService(PROOF_SERVER_URL, "proof-server", 180_000, "midnight-proof-server");
 
+  // Pre-flight: proof-server /version must respond.
+  try {
+    const r = await fetch(`${PROOF_SERVER_URL}/version`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    logger.info(`proof-server /version OK: ${(await r.text()).trim()}`);
+  } catch (e) {
+    throw new Error(
+      `proof-server /version check failed (${e?.message ?? e}). Run:\n  curl ${PROOF_SERVER_URL}/version\nand restart docker if needed: docker compose restart proof-server`,
+    );
+  }
+
   // Wait until the node is actually producing blocks. Without this the wallet
   // stamps ttlOneHour() against a stale tip and the tx is rejected with
   // "1010: Invalid Transaction: Custom error: 171".
   await waitForBlockHeight(INDEXER_URL, 2, 60_000);
+
 
   const envConfig = {
     walletNetworkId: NETWORK_ID,
@@ -224,9 +259,11 @@ async function main() {
   logger.info("Starting wallet sync...");
   await wallet.start(zswapSecretKeys, dustSecretKey);
 
-  // Wait until the wallet reports it has synced to the tip AND sees a non-zero
-  // dust balance. Fixed 15s sleeps race with WS reconnects on a cold chain.
-  await waitForWalletReady(wallet, 90_000);
+  // Wait for a spendable DUST coin (not just sync). A wallet can report
+  // synced-to-tip at block 0/1 with zero spendable UTXOs — deploying then
+  // guarantees "Custom error: 171" from the mempool.
+  await waitForSpendableDust(wallet, 300_000);
+
 
 
 
@@ -311,12 +348,20 @@ async function main() {
       const msg = String(e?.message ?? e);
       const retryable = /Insufficient Funds|Custom error: 171|Invalid Transaction|Transaction submission error/i.test(msg);
       if (retryable && attempt < maxAttempts) {
-        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); retrying in 10s...`);
-        await setTimeout(10_000);
+        logger.warn(`Deploy attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}); re-checking wallet dust before retrying...`);
+        if (!(await walletHasDust(wallet))) {
+          logger.warn("Wallet has no spendable DUST — waiting up to 120s for it to arrive before retry.");
+          try { await waitForSpendableDust(wallet, 120_000); } catch (waitErr) {
+            throw new Error(`Retry aborted: ${waitErr.message}`);
+          }
+        } else {
+          await setTimeout(10_000);
+        }
         continue;
       }
       throw e;
     }
+
   }
 
 

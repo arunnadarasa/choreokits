@@ -7,9 +7,7 @@ import type {
   CoinPublicKey,
   EncPublicKey,
   FinalizedTransaction,
-  Transaction,
   TransactionId,
-  UnprovenTransaction,
 } from "@midnight-ntwrk/midnight-js-protocol/ledger";
 import type {
   MidnightProvider,
@@ -110,6 +108,26 @@ async function getWalletKeys(api: ConnectedAPI, networkId: string) {
   };
 }
 
+function describeLaceError(error: unknown): string {
+  if (error instanceof Error) {
+    const pieces = [error.name, error.message].filter(Boolean);
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause) pieces.push(`cause=${describeLaceError(cause)}`);
+    return pieces.join(": ");
+  }
+
+  if (typeof error === "string") return error;
+
+  try {
+    const json = JSON.stringify(error);
+    if (json && json !== "{}") return json;
+  } catch {
+    // fall through to String()
+  }
+
+  return String(error);
+}
+
 class LaceWalletProvider implements WalletProvider {
   constructor(
     private api: ConnectedAPI,
@@ -130,8 +148,8 @@ class LaceWalletProvider implements WalletProvider {
     const { tx: balancedHex } = await this.api.balanceUnsealedTransaction(hex, { payFees: true });
     const bytes = Buffer.from(balancedHex, "hex");
     const mod: any = await import("@midnight-ntwrk/midnight-js-protocol/ledger");
-    const Unproven = mod.UnprovenTransaction ?? mod.default?.UnprovenTransaction;
-    return Unproven.deserialize(bytes) as unknown as FinalizedTransaction;
+    const Transaction = mod.Transaction ?? mod.default?.Transaction;
+    return Transaction.deserialize("signature", "proof", "binding", bytes) as FinalizedTransaction;
   }
 }
 
@@ -143,9 +161,7 @@ class LaceMidnightProvider implements MidnightProvider {
     try {
       await this.api.submitTransaction(hex);
     } catch (e) {
-      const msg = e instanceof Error && e.message
-        ? e.message
-        : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+      const msg = describeLaceError(e);
       console.error("Lace submitTransaction failed:", e);
       if (/already|duplicate|known/i.test(msg)) {
         return tx.transactionHash();

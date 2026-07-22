@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectedAPI, InitialAPI } from "@midnight-ntwrk/dapp-connector-api";
 
 export type WalletStatus =
@@ -8,6 +8,8 @@ export type WalletStatus =
   | "connecting"
   | "connected"
   | "error";
+
+export type DustInfo = { balance: bigint; cap: bigint } | null;
 
 type Connector = Omit<InitialAPI, "connect"> & {
   connect: (networkId: string) => Promise<ConnectedAPI>;
@@ -35,14 +37,45 @@ function inferNetwork(addr: string): string {
   return s;
 }
 
+async function readUnshieldedAddress(api: ConnectedAPI): Promise<string | null> {
+  if (typeof api.getUnshieldedAddress !== "function") return null;
+  try {
+    const u = await api.getUnshieldedAddress();
+    return typeof u === "string" ? u : (u as { unshieldedAddress?: string })?.unshieldedAddress ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function readDust(api: ConnectedAPI): Promise<DustInfo> {
+  if (typeof (api as { getDustBalance?: unknown }).getDustBalance !== "function") return null;
+  try {
+    const d = await (api as unknown as { getDustBalance: () => Promise<{ balance: bigint; cap: bigint }> }).getDustBalance();
+    // Normalise — some builds return numbers or strings.
+    const toBig = (v: unknown): bigint => {
+      if (typeof v === "bigint") return v;
+      if (typeof v === "number") return BigInt(Math.trunc(v));
+      if (typeof v === "string") return BigInt(v);
+      return 0n;
+    };
+    return { balance: toBig(d?.balance), cap: toBig(d?.cap) };
+  } catch {
+    return null;
+  }
+}
+
 export function useMidnightWallet() {
   const [status, setStatus] = useState<WalletStatus>("idle");
   const [address, setAddress] = useState<string | null>(null);
+  const [unshieldedAddress, setUnshieldedAddress] = useState<string | null>(null);
   const [api, setApi] = useState<ConnectedAPI | null>(null);
   const [apiVersion, setApiVersion] = useState<string | null>(null);
   const [network, setNetwork] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dust, setDust] = useState<DustInfo>(null);
   const [tick, setTick] = useState(0);
+  const apiRef = useRef<ConnectedAPI | null>(null);
+  apiRef.current = api;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -67,6 +100,13 @@ export function useMidnightWallet() {
     }, 100);
     return () => window.clearInterval(iv);
   }, [tick]);
+
+  const refreshDust = useCallback(async () => {
+    const current = apiRef.current;
+    if (!current) return;
+    const d = await readDust(current);
+    setDust(d);
+  }, []);
 
   const connect = useCallback(async () => {
     try {
@@ -105,45 +145,61 @@ export function useMidnightWallet() {
         try {
           const s = await connectedApi.getShieldedAddresses();
           if (Array.isArray(s)) addr = s[0] ?? null;
-          else if (s && typeof s === "object") addr = Object.values(s)[0] ?? null;
+          else if (s && typeof s === "object") {
+            const rec = s as Record<string, string>;
+            addr = rec.shieldedAddress ?? Object.values(rec)[0] ?? null;
+          }
         } catch {
           // ignore
         }
       }
-      if (!addr && typeof connectedApi.getUnshieldedAddress === "function") {
-        try {
-          const u = await connectedApi.getUnshieldedAddress();
-          addr = typeof u === "string" ? u : (u as { unshieldedAddress?: string })?.unshieldedAddress ?? null;
-        } catch {
-          // ignore
-        }
-      }
+      const unshielded = await readUnshieldedAddress(connectedApi);
+      if (!addr) addr = unshielded;
       if (!addr) throw new Error("Connected but couldn't read an address. Update Lace.");
       setAddress(addr);
+      setUnshieldedAddress(unshielded);
       setApi(connectedApi);
+      apiRef.current = connectedApi;
       setNetwork(used ?? inferNetwork(addr));
       setApiVersion(c.apiVersion);
       setStatus("connected");
+      const d = await readDust(connectedApi);
+      setDust(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
   }, []);
 
+  // Poll dust while connected so the UI reflects a running "Generate tDUST".
+  useEffect(() => {
+    if (status !== "connected" || !api) return;
+    const iv = window.setInterval(() => {
+      void refreshDust();
+    }, 6000);
+    return () => window.clearInterval(iv);
+  }, [status, api, refreshDust]);
+
   return {
     status,
     address,
+    unshieldedAddress,
     api,
     apiVersion,
     network,
     error,
+    dust,
+    refreshDust,
     connect,
     disconnect: () => {
       setAddress(null);
+      setUnshieldedAddress(null);
       setApi(null);
+      apiRef.current = null;
       setNetwork(null);
       setStatus("ready");
       setError(null);
+      setDust(null);
     },
     redetect: () => setTick((n) => n + 1),
   };

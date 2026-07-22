@@ -43,6 +43,10 @@ export function PublishKitForm({
       setError("Set the deployed contract address in step 2 first.");
       return;
     }
+    if (dustEmpty && walletApi) {
+      setError("Lace has 0 tDUST — fees can't be paid. Fund via scripts/fund-lace.sh, then Generate tDUST in Lace.");
+      return;
+    }
     if (!title.trim() || !steps.trim()) {
       setError("Title and steps are required.");
       return;

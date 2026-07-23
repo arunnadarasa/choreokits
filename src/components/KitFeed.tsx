@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { KitPayload } from "@/components/PublishKitForm";
 import { decodeChainState } from "@/lib/contract";
 
-type FeedEntry = KitPayload & { source: "local" | "chain" };
+type FeedEntry = KitPayload & { source: "local" | "chain" | "on-chain" };
 
 async function readIndexerState(indexerUrl: string, address: string): Promise<string | null> {
   try {
@@ -35,7 +35,12 @@ export function KitFeed({
 
   useEffect(() => {
     const local = JSON.parse(localStorage.getItem("choreo:local-kits") ?? "[]") as KitPayload[];
-    setEntries(local.map((k) => ({ ...k, source: "local" as const })));
+    setEntries(
+      local.map((k) => ({
+        ...k,
+        source: (k.txId ? "on-chain" : "local") as FeedEntry["source"],
+      })),
+    );
   }, [refreshTick]);
 
   useEffect(() => {
@@ -56,9 +61,8 @@ export function KitFeed({
         const lastKit = decoded.lastKit;
         if (lastKit) {
           setEntries((prev) => {
-            const exists = prev.some(
-              (e) => e.source === "chain" && e.publishedAt === lastKit.publishedAt,
-            );
+            // Dedupe by publishedAt; prefer the local row that already has a txId.
+            const exists = prev.some((e) => e.publishedAt === lastKit.publishedAt);
             if (exists) return prev;
             return [{ ...lastKit, source: "chain" as const }, ...prev];
           });
@@ -105,6 +109,9 @@ export function KitFeed({
               </span>
             </div>
             <p className="text-xs text-muted-foreground whitespace-pre-wrap">{k.steps}</p>
+            {k.txId && (
+              <p className="text-[10px] font-mono opacity-60 break-all">tx: {k.txId}</p>
+            )}
             <p className="text-[10px] font-mono opacity-50">
               {new Date(k.publishedAt).toLocaleString()}
             </p>

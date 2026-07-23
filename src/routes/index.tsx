@@ -18,7 +18,6 @@ const KitFeed = lazy(() =>
 );
 
 export const Route = createFileRoute("/")({
-  ssr: false,
   head: () => ({
     meta: [
       { title: "Tokenized Choreo Kits — ZK licensing for choreography" },

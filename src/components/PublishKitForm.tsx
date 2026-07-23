@@ -62,10 +62,7 @@ export function PublishKitForm({
     };
     setProving(true);
     try {
-      // Persist locally so the feed reflects it even before indexer sync.
-      const local = JSON.parse(localStorage.getItem("choreo:local-kits") ?? "[]") as KitPayload[];
-      local.unshift(payload);
-      localStorage.setItem("choreo:local-kits", JSON.stringify(local.slice(0, 20)));
+      let txId: string | undefined;
 
       if (IS_UNDEPLOYED) {
         // Lace cannot sign on Undeployed. Route through the server API which
@@ -82,12 +79,13 @@ export function PublishKitForm({
         });
         const data = (await resp.json().catch(() => ({}))) as { txId?: string; error?: string };
         if (!resp.ok) throw new Error(data.error || `Mint failed (${resp.status})`);
-        setOk(`Submitted on-chain (server-signed). Tx: ${String(data.txId).slice(0, 24)}…`);
+        txId = data.txId;
+        setOk(`Submitted on-chain (server-signed). Tx: ${txId ?? "submitted"}`);
       } else if (!walletApi) {
         await new Promise((r) => setTimeout(r, 2000));
         setOk("Kit staged locally. Connect Lace and set a deployed contract to broadcast on-chain.");
       } else {
-        const txId = await publishKit(
+        txId = await publishKit(
           walletApi,
           NETWORK_ID,
           contractAddress,
@@ -95,9 +93,17 @@ export function PublishKitForm({
           payload.steps,
           payload.priceDust,
         );
-        setOk(`Submitted on-chain. Tx: ${txId.slice(0, 24)}…`);
+        setOk(`Submitted on-chain. Tx: ${txId}`);
       }
-      onPublished(payload);
+
+      // Persist only AFTER a confirmed mint, with the txId attached so the
+      // Kit Feed shows the full hash and can dedupe against indexer rows.
+      const stored: KitPayload = { ...payload, txId };
+      const local = JSON.parse(localStorage.getItem("choreo:local-kits") ?? "[]") as KitPayload[];
+      local.unshift(stored);
+      localStorage.setItem("choreo:local-kits", JSON.stringify(local.slice(0, 20)));
+
+      onPublished(stored);
       setTitle("");
       setSteps("");
     } catch (e) {
@@ -185,5 +191,6 @@ export type KitPayload = {
   steps: string;
   priceDust: number;
   publishedAt: string;
+  txId?: string;
 };
 

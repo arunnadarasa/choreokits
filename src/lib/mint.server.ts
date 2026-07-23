@@ -187,6 +187,13 @@ export async function publishKitLocal(
   const ctx = await getCtx();
   const privateStateId = `choreo-kits-mint-${contractAddress.slice(0, 12)}`;
 
+  // CRITICAL: bind the contract address on the private state provider BEFORE any
+  // get/set. Otherwise the provider throws "Contract address not set. Call
+  // setContractAddress()…" and the mint fails with a 500.
+  if (typeof ctx.providers.privateStateProvider.setContractAddress === "function") {
+    ctx.providers.privateStateProvider.setContractAddress(contractAddress);
+  }
+
   // Ensure a private state row exists for this contract before calling findDeployedContract.
   const existing = await ctx.providers.privateStateProvider.get(privateStateId).catch(() => null);
   if (!existing) {

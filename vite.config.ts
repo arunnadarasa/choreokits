@@ -59,8 +59,10 @@ export default defineConfig({
   // the SSR pass, so nitro (Cloudflare workerd bundler) stays enabled to
   // produce a single inlined worker script.
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper),
+    // and use src/client.tsx to polyfill Buffer before hydration.
     server: { entry: "server" },
+    client: { entry: "client" },
   },
   vite: {
     plugins: [midnightSsrStub(), wasm(), clientTopLevelAwait()],
@@ -80,13 +82,29 @@ export default defineConfig({
       },
     },
     optimizeDeps: {
-      esbuildOptions: { target: "esnext", supported: { "top-level-await": true } },
+      // noDiscovery stops Vite from crawling the Midnight WASM graph, which
+      // blocked /.vite/deps for minutes and left the client boot script
+      // ("Loading Midnight client…") stuck forever on a blank page.
+      noDiscovery: true,
       include: [
-        "@midnight-ntwrk/compact-runtime",
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+        "buffer",
+        "object-inspect",
+        "cross-fetch",
+        "@subsquid/scale-codec",
       ],
       exclude: [
+        "@midnight-ntwrk/compact-runtime",
         "@midnight-ntwrk/onchain-runtime-v3",
         "@midnight-ntwrk/onchain-runtime-v3/midnight_onchain_runtime_wasm_bg.wasm",
+        "@midnight-ntwrk/midnight-js-contracts",
+        "@midnight-ntwrk/midnight-js-protocol",
+        "@midnight-ntwrk/midnight-js-types",
+        "@midnight-ntwrk/midnight-js-utils",
       ],
     },
   },

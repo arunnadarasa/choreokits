@@ -1,24 +1,34 @@
-## Root cause
+Apply the working fixes from `arunnadarasa/midnightwebinar` (per its `Cursor Input.md` post-mortem) to this repo.
 
-`scripts/deploy-midnight.mjs` proceeds even when the genesis wallet hasn't synced (`synced=false balances={}`). With 0 dust, every `deployContract` attempt is rejected by the mempool with `Custom error: 171`, and the 8-attempt retry loop can't help because the wallet is still empty.
+## Root cause (from the post-mortem)
 
-Confirmed by Midnight AI: the correct gate is **spendable DUST coins** (`dust.availableCoins.length >= 1`), not just `syncProgress.synced` — a wallet can report synced-to-tip at block 0/1 with zero spendable UTXOs.
+Vite's dep pre-bundler crawled the Midnight WASM graph on first load, hanging every `/.vite/deps/*` request for minutes — so the TanStack client entry never loaded and the page stayed blank. Fix: `noDiscovery: true` with a minimal `include`, exclude every `@midnight-ntwrk/*` from pre-bundling, ship a custom client entry that polyfills `Buffer` before `hydrateRoot`, and keep SSR enabled on the home route so the shell renders while client JS boots.
 
-## Changes (single file: `scripts/deploy-midnight.mjs`)
+## Changes
 
-1. **Replace `waitForWalletReady` with `waitForSpendableDust`.** Subscribe to `wallet.state()` with rxjs `filter` for `state.dust?.availableCoins.length >= 1`; use `timeout()` to fail with a clear error. This is the pattern from the official `wait-for-dust.ts` script.
-2. **Bump timeout to 300s** (matches the official example default).
-3. **Throw on timeout** instead of warning and falling through — deploying without dust is guaranteed to fail with error 171, so fail fast with an actionable message ("wallet never received dust; check proof-server health at http://localhost:6300/version and that node produced blocks past #0").
-4. **Log sync progress each poll** (`applyGap`, `sourceGap`, `synced`, dust `balance` and `availableCoins.length`) so a stuck sync is diagnosable at a glance.
-5. **Re-check dust between deploy retries.** If a retry hits error 171 again, poll `availableCoins` before resubmitting — avoids burning 8×10s on empty-wallet resubmits.
-6. **Pre-flight proof-server health check.** `GET /version` before starting the wallet; if it fails, print the exact `curl` command the user should run.
+1. **`vite.config.ts`** — keep existing `midnightSsrStub()` + `clientTopLevelAwait()` + WASM plugin, but replace the `optimizeDeps` block with:
+   - `noDiscovery: true`
+   - `include`: `react`, `react-dom`, `react-dom/client`, `react/jsx-runtime`, `react/jsx-dev-runtime`, `buffer`, `object-inspect`, `cross-fetch`, `@subsquid/scale-codec`
+   - `exclude`: `@midnight-ntwrk/compact-runtime`, `@midnight-ntwrk/onchain-runtime-v3`, its `_bg.wasm`, `@midnight-ntwrk/midnight-js-contracts`, `@midnight-ntwrk/midnight-js-protocol`, `@midnight-ntwrk/midnight-js-types`, `@midnight-ntwrk/midnight-js-utils`
+   - Drop the current `esbuildOptions` (deprecated in Vite 8; the warning already showed up in the terminal).
 
-No changes to the contract, frontend, `mint.server.ts`, Docker stack, or `package.json`. Only the deploy script.
+2. **New `src/client.tsx`** — async `Buffer` polyfill, then `hydrateRoot(document, <StartClient />)` inside `startTransition`. Wired via `tanstackStart.client = { entry: "client" }` in `vite.config.ts`.
 
-## Verification
+3. **`src/routes/index.tsx`** — remove `ssr: false` so the header + "Loading Midnight client…" fallback renders server-side. `ClientOnly` still gates the Midnight-heavy widgets underneath. No other logic changes.
 
-```bash
-docker compose down -v && bun run compile
-```
+4. **`src/lib/mint.server.ts`** — call `privateStateProvider.setContractAddress(contractAddress)` before any `get`/`set` inside `publishKitLocal()`. Fetch the reference file to copy the exact fix (server helper structure is otherwise identical to ours).
 
-Expected: sync log shows `availableCoins=1+` within ~30–120s of wallet start, then a single successful `deployContract` on attempt 1. If it fails, the new error message will name which precondition wasn't met (proof-server down / node stuck at #0 / dust never arrived) instead of looping silently.
+5. **`src/components/PublishKitForm.tsx`** — extend `KitPayload` with optional `txId`, and write the feed row only after `/api/mint` (or the Lace `publishKit`) returns success, attaching the returned `txId`.
+
+6. **`src/components/KitFeed.tsx`** — render `tx: {hash}` with a source label (`on-chain` / `chain` / `local`) and dedupe by `publishedAt`, preferring the local row that already has a `txId`.
+
+7. **Skill update — `.agents/skills/lovable-midnight/SKILL.md`** — add a short "Blank page on first `bun run dev` (Vite dep pre-bundling crawls Midnight WASM)" entry to the failure-modes table with the `noDiscovery` + custom `client.tsx` fix, and note "Keep SSR on the shell route; gate only Midnight widgets behind `ClientOnly`" as a rule.
+
+Not touched: `docker-compose.yml`, `scripts/deploy-midnight.mjs`, `src/router.tsx`, `src/server.ts`, `src/routes/__root.tsx`, `src/lib/contract.ts` (Lace-signed path stays as-is for Preview/Preprod).
+
+## Verification (after switching to build mode)
+
+- `curl http://localhost:8080/` returns a body with "Tokenized Choreo Kits" (SSR shell).
+- `curl http://localhost:8080/.vite/deps/react.js` returns 200 quickly.
+- Hard-reload in Chrome: header visible in <2s; the Midnight widgets swap in after client hydration.
+- `POST /api/mint` returns `{ txId }` and the Kit Feed shows the full hash.
